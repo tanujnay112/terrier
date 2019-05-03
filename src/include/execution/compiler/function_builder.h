@@ -19,6 +19,10 @@ class FunctionBuilder {
 
   DISALLOW_COPY_AND_MOVE(FunctionBuilder);
 
+  FunctionBuilder *GetPrevFn() {
+    return prev_fn_;
+  }
+
   void ReturnAndFinish(ast::Expr *ret);
 
  private:

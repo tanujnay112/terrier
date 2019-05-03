@@ -25,4 +25,12 @@ CodeContext::CodeContext(util::Region *region)
       f32_type_(ast_ctx_.LookupBuiltinType(ast::Identifier("float32"))),
       f64_type_(ast_ctx_.LookupBuiltinType(ast::Identifier("float64"))) {}
 
+void CodeContext::FinishFunction(tpl::ast::FunctionDecl *fn_decl) {
+    decls_.push_back(fn_decl);
+    codeBlock_.Clear();
+
+    //pls fix this
+    SetCurrentFunction(curr_fn_->GetPrevFn());
+  }
+
 }  // namespace tpl::compiler
