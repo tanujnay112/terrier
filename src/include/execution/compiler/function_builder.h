@@ -24,6 +24,7 @@ class FunctionBuilder {
  private:
   bool finished_;
   CodeContext *ctx_;
+  FunctionBuilder *prev_fn_;
   CodeGen *codeGen_;
   ast::Type *ret_type_;
   util::RegionVector<ast::FieldDecl*> args_;
