@@ -1,3 +1,4 @@
+#include "execution/compiler/function_builder.h"
 #include "execution/compiler/code_context.h"
 
 namespace tpl::compiler {
@@ -28,8 +29,6 @@ CodeContext::CodeContext(util::Region *region)
 void CodeContext::FinishFunction(tpl::ast::FunctionDecl *fn_decl) {
     decls_.push_back(fn_decl);
     codeBlock_.Clear();
-
-    //pls fix this
     SetCurrentFunction(curr_fn_->GetPrevFn());
   }
 
