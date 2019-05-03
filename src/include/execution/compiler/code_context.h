@@ -26,7 +26,12 @@ class CodeContext {
 
   CodeBlock &GetCodeBlock() { return codeBlock_; }
 
-  void FinishFunction(ast::FunctionDecl *fn_decl) { decls_.push_back(fn_decl); }
+  FunctionBuilder *GetCurrentFunction() const { return curr_fn_; }
+
+  void FinishFunction(ast::FunctionDecl *fn_decl) {
+    decls_.push_back(fn_decl);
+    codeBlock_.Clear();
+  }
 
  private:
   void SetCurrentFunction(FunctionBuilder *fn) { curr_fn_ = fn; }
