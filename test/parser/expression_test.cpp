@@ -38,7 +38,7 @@ bool CompareExpressionsEqual(const std::vector<common::ManagedPointer<AbstractEx
       return false;
     }
   }
-  return true;x
+  return true;
 }
 
 // NOLINTNEXTLINE
