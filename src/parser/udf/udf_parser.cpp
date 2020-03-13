@@ -42,10 +42,10 @@ std::unique_ptr<FunctionAST> PLpgSQLParser::ParsePLpgSQL(
     std::string func_body) {
   auto result = pg_query_parse_plpgsql(func_body.c_str());
   if (result.error) {
-    LOG_DEBUG("PL/pgSQL parse error : %s", result.error->message);
+    PARSER_LOG_DEBUG("PL/pgSQL parse error : {}", result.error->message);
     pg_query_free_plpgsql_parse_result(result);
-    throw PARSER_EXCEPTION("PL/pgSQL parsing error : " +
-        std::string(result.error->message));
+    throw PARSER_EXCEPTION(("PL/pgSQL parsing error : " +
+        std::string(result.error->message)).c_str());
   }
   // The result is a list, we need to wrap it
   std::string ast_json_str = "{ \"" + kFunctionList +
@@ -127,7 +127,7 @@ std::unique_ptr<StmtAST> PLpgSQLParser::ParseBlock(const nlohmann::json &block) 
     } else if (stmt_names[0] == kPLpgSQL_stmt_dynexecute) {
       stmts.push_back(ParseDynamicSQL(stmt[kPLpgSQL_stmt_dynexecute]));
     } else {
-      throw PARSER_EXCEPTION("Statement type not supported : " + stmt_names[0]);
+      throw PARSER_EXCEPTION("Statement type not supported");
     }
   }
 
@@ -175,7 +175,7 @@ std::unique_ptr<StmtAST> PLpgSQLParser::ParseDecl(const nlohmann::json &decl) {
 
   } else {
     // TODO[Siva]: need to handle other types like row, table etc;
-    throw PARSER_EXCEPTION("Declaration type not supported : " + decl_names[0]);
+    throw PARSER_EXCEPTION("Declaration type not supported");
   }
 }
 
@@ -191,7 +191,7 @@ std::unique_ptr<StmtAST> PLpgSQLParser::ParseIf(const nlohmann::json &branch) {
 
 std::unique_ptr<StmtAST> PLpgSQLParser::ParseWhile(const nlohmann::json &loop) {
   PARSER_LOG_DEBUG("ParseWhile");
-  auto cond_expr = ParseExprSQL(loop[kCond][kPLpgSQL_expr][kQuery].get<std::string>()));
+  auto cond_expr = ParseExprSQL(loop[kCond][kPLpgSQL_expr][kQuery].get<std::string>());
   auto body_stmt = ParseBlock(loop[kBody]);
   return std::unique_ptr<WhileStmtAST>(
       new WhileStmtAST(std::move(cond_expr), std::move(body_stmt)));
@@ -216,9 +216,9 @@ std::unique_ptr<StmtAST> PLpgSQLParser::ParseDynamicSQL(
 }
 
 std::unique_ptr<ExprAST> PLpgSQLParser::ParseExprSQL(
-    const std::string expr_sql_str, common::ManagedPointer<parser::PostgresParser> parser) {
+    const std::string expr_sql_str) {
   PARSER_LOG_DEBUG("Parsing Expr SQL : %s", expr_sql_str.c_str());
-  auto stmt_list = parser->BuildParseTree(expr_sql_str.c_str());
+  auto stmt_list = sql_parser_->BuildParseTree(expr_sql_str.c_str());
   if (stmt_list == nullptr) {
     return nullptr;
   }
@@ -235,9 +235,9 @@ std::unique_ptr<ExprAST> PLpgSQLParser::ParseExprSQL(
 
 std::unique_ptr<ExprAST> PLpgSQLParser::ParseExpr(
     common::ManagedPointer<parser::AbstractExpression> expr) {
-  if (expr->GetExpressionType() == parser::ExpressionType::VALUE_TUPLE) {
+  if (expr->GetExpressionType() == parser::ExpressionType::COLUMN_VALUE) {
     return std::unique_ptr<VariableExprAST>(new VariableExprAST(
-        expr.CastManagedPointerTo<parser::TupleValueExpression>()
+        expr.CastManagedPointerTo<parser::ColumnValueExpression>()
             ->GetColumnName()));
   } else if (parser::ExpressionUtil::IsOperatorExpression(
       expr->GetExpressionType()) ||
@@ -257,8 +257,7 @@ std::unique_ptr<ExprAST> PLpgSQLParser::ParseExpr(
         new CallExprAST(func_expr->GetFuncName(), std::move(args)));
   } else if (expr->GetExpressionType() == parser::ExpressionType::VALUE_CONSTANT) {
     return std::unique_ptr<ValueExprAST>(new ValueExprAST(
-        expr.CastManagedPointerTo<common::ManagedPointer<parser::ConstantValueExpression>>()
-            ->GetValue()));
+        expr.CastManagedPointerTo<parser::ConstantValueExpression>()->GetValue()));
   }
   throw PARSER_EXCEPTION("PL/pgSQL parser : Expression type not supported");
 }
