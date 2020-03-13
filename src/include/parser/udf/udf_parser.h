@@ -1,12 +1,13 @@
+#pragma once
+
 #include <memory>
 #include <vector>
-
-#pragma once
 
 #include "nlohmann/json.hpp"
 #include "ast_nodes.h"
 
 #include "parser/expression_util.h"
+#include "parser/udf/udf_ast_context.h"
 
 namespace terrier::parser::udf {
 
@@ -14,9 +15,8 @@ namespace terrier::parser::udf {
 class FunctionAST;
 class PLpgSQLParser {
  public:
-  PLpgSQLParser(common::ManagedPointer<UDFContext> udf_context, common::ManagedPointer<parser::PostgresParser> sql_parser)
-  : udf_context_(udf_context), sql_parser_(sql_parser) {};
-  std::unique_ptr<FunctionAST> ParsePLpgSQL(std::string func_body);
+  PLpgSQLParser() = default;
+  std::unique_ptr<FunctionAST> ParsePLpgSQL(std::string func_body, common::ManagedPointer<UDFASTContext> ast_context);
 
  private:
   std::unique_ptr<StmtAST> ParseBlock(const nlohmann::json &block);
@@ -31,7 +31,8 @@ class PLpgSQLParser {
   std::unique_ptr<ExprAST> ParseExprSQL(const std::string expr_sql_str);
   std::unique_ptr<ExprAST> ParseExpr(common::ManagedPointer<parser::AbstractExpression>);
 
-  common::ManagedPointer<UDFContext> udf_context_;
-  common::ManagedPointer<parser::PostgresParser> sql_parser_;
+  common::ManagedPointer<UDFASTContext> udf_ast_context_;
+//  common::ManagedPointer<parser::PostgresParser> sql_parser_;
+  std::unordered_map<std::string, type::TypeId> symbol_table_;
 };
 }  // namespace terrier::parser::udf

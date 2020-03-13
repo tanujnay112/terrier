@@ -39,7 +39,7 @@ const std::string kPLpgSQL_row = "PLpgSQL_row";
 const std::string kPLpgSQL_stmt_dynexecute = "PLpgSQL_stmt_dynexecute";
 
 std::unique_ptr<FunctionAST> PLpgSQLParser::ParsePLpgSQL(
-    std::string func_body) {
+    std::string func_body, common::ManagedPointer<UDFASTContext> ast_context) {
   auto result = pg_query_parse_plpgsql(func_body.c_str());
   if (result.error) {
     PARSER_LOG_DEBUG("PL/pgSQL parse error : {}", result.error->message);
@@ -113,7 +113,7 @@ std::unique_ptr<StmtAST> PLpgSQLParser::ParseBlock(const nlohmann::json &block) 
     } else if (stmt_names[0] == kPLpgSQL_stmt_assign) {
       // TODO[Siva]: Need to fix Assignment expression / statement
       std::unique_ptr<VariableExprAST> lhs(
-          new VariableExprAST(udf_context_->GetVariableAtIndex(
+          new VariableExprAST(udf_ast_context_->GetVariableAtIndex(
               stmt[kPLpgSQL_stmt_assign][kVarno].get<uint32_t >())));
       auto rhs = ParseExprSQL(
           stmt[kPLpgSQL_stmt_assign][kExpr][kPLpgSQL_expr][kQuery].get<std::string>());
@@ -142,26 +142,26 @@ std::unique_ptr<StmtAST> PLpgSQLParser::ParseDecl(const nlohmann::json &decl) {
 
   if (decl_names[0] == kPLpgSQL_var) {
     auto var_name = decl[kPLpgSQL_var][kRefname].get<std::string>();
-    udf_context_->AddVariable(var_name);
+    udf_ast_context_->AddVariable(var_name);
     auto type =
         decl[kPLpgSQL_var][kDatatype][kPLpgSQL_type][kTypname].get<std::string>();
 
     PARSER_LOG_INFO("Registering type %s: %s", var_name.c_str(), type.c_str());
 
     if (type == "integer") {
-      udf_context_->SetVariableType(var_name, type::TypeId::INTEGER);
+      udf_ast_context_->SetVariableType(var_name, type::TypeId::INTEGER);
       return std::unique_ptr<DeclStmtAST>(
           new DeclStmtAST(var_name, type::TypeId::INTEGER));
     } else if (type == "double") {
-      udf_context_->SetVariableType(var_name, type::TypeId::DECIMAL);
+      udf_ast_context_->SetVariableType(var_name, type::TypeId::DECIMAL);
       return std::unique_ptr<DeclStmtAST>(
           new DeclStmtAST(var_name, type::TypeId::DECIMAL));
     } else if (type == "varchar") {
-      udf_context_->SetVariableType(var_name, type::TypeId::VARCHAR);
+      udf_ast_context_->SetVariableType(var_name, type::TypeId::VARCHAR);
       return std::unique_ptr<DeclStmtAST>(
           new DeclStmtAST(var_name, type::TypeId::VARCHAR));
     } else {
-      udf_context_->SetVariableType(var_name, type::TypeId::INVALID);
+      udf_ast_context_->SetVariableType(var_name, type::TypeId::INVALID);
       return std::unique_ptr<DeclStmtAST>(
           new DeclStmtAST(var_name, type::TypeId::INVALID));
     }
@@ -169,7 +169,7 @@ std::unique_ptr<StmtAST> PLpgSQLParser::ParseDecl(const nlohmann::json &decl) {
     auto var_name = decl[kPLpgSQL_var][kRefname].get<std::string>();
     TERRIER_ASSERT(var_name == "*internal*", "Unexpected refname");
     // TODO[Siva]: Support row types later
-    udf_context_->SetVariableType(var_name, type::TypeId::INVALID);
+    udf_ast_context_->SetVariableType(var_name, type::TypeId::INVALID);
     return std::unique_ptr<DeclStmtAST>(
         new DeclStmtAST(var_name, type::TypeId::INVALID));
 
@@ -218,7 +218,7 @@ std::unique_ptr<StmtAST> PLpgSQLParser::ParseDynamicSQL(
 std::unique_ptr<ExprAST> PLpgSQLParser::ParseExprSQL(
     const std::string expr_sql_str) {
   PARSER_LOG_DEBUG("Parsing Expr SQL : %s", expr_sql_str.c_str());
-  auto stmt_list = sql_parser_->BuildParseTree(expr_sql_str.c_str());
+  auto stmt_list = PostgresParser::BuildParseTree(expr_sql_str.c_str());
   if (stmt_list == nullptr) {
     return nullptr;
   }
