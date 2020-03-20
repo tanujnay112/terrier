@@ -1,66 +1,58 @@
-////===----------------------------------------------------------------------===//
-////
-////                         Peloton
-////
-//// udf_codegen.h
-////
-//// Identification: src/include/udf/udf_codegen.h
-////
-//// Copyright (c) 2015-2018, Carnegie Mellon University Database Group
-////
-////===----------------------------------------------------------------------===//
-//
-//#pragma once
-//#include "ast_node_visitor.h"
-//
-//#include "codegen/codegen.h"
-//#include "codegen/function_builder.h"
-//#include "codegen/value.h"
-//
-//namespace peloton {
-//
-//namespace udf {
-//class AbstractAST;
-//class StmtAST;
-//class ExprAST;
-//class ValueExprAST;
-//class VariableExprAST;
-//class BinaryExprAST;
-//class CallExprAST;
-//class SeqStmtAST;
-//class DeclStmtAST;
-//class IfStmtAST;
-//class WhileStmtAST;
-//class RetStmtAST;
-//class AssignStmtAST;
-//class SQLStmtAST;
-//class DynamicSQLStmtAST;
-//class UDFContext;
-//
-//class UDFCodegen : public ASTNodeVisitor {
-// public:
-//  UDFCodegen(codegen::CodeGen *codegen, codegen::FunctionBuilder *fb,
-//             UDFContext *udf_Context);
-//
-//  void GenerateUDF(AbstractAST *);
-//  void Visit(ValueExprAST *) override;
-//  void Visit(VariableExprAST *) override;
-//  void Visit(BinaryExprAST *) override;
-//  void Visit(CallExprAST *) override;
-//  void Visit(SeqStmtAST *) override;
-//  void Visit(DeclStmtAST *) override;
-//  void Visit(IfStmtAST *) override;
-//  void Visit(WhileStmtAST *) override;
-//  void Visit(RetStmtAST *) override;
-//  void Visit(AssignStmtAST *) override;
-//  void Visit(SQLStmtAST *) override;
-//  void Visit(DynamicSQLStmtAST *) override;
-//
-// private:
-//  codegen::CodeGen *codegen_;
-//  codegen::FunctionBuilder *fb_;
-//  UDFContext *udf_context_;
-//  codegen::Value *dst_;
-//};
-//}  // namespace udf
-//}  // namespace peloton
+#pragma once
+
+#include "execution/compiler/function_builder.h"
+#include "ast_node_visitor.h"
+#include "udf_ast_context.h"
+#include "udf_context.h"
+
+namespace terrier::parser::udf {
+using namespace execution::compiler;
+
+class AbstractAST;
+class StmtAST;
+class ExprAST;
+class ValueExprAST;
+class VariableExprAST;
+class BinaryExprAST;
+class CallExprAST;
+class SeqStmtAST;
+class DeclStmtAST;
+class IfStmtAST;
+class WhileStmtAST;
+class RetStmtAST;
+class AssignStmtAST;
+class SQLStmtAST;
+class DynamicSQLStmtAST;
+
+class UDFCodegen : ASTNodeVisitor {
+ public:
+
+  UDFCodegen(FunctionBuilder *fb,
+             UDFContext *udf_Context) : fb_{fb} {};
+  ~UDFCodegen(){};
+
+  void GenerateUDF(AbstractAST *);
+  void Visit(AbstractAST *) override;
+  void Visit(StmtAST *) override;
+  void Visit(ExprAST *) override;
+  void Visit(ValueExprAST *) override;
+  void Visit(VariableExprAST *) override;
+  void Visit(BinaryExprAST *) override;
+  void Visit(CallExprAST *) override;
+  void Visit(SeqStmtAST *) override;
+  void Visit(DeclStmtAST *) override;
+  void Visit(IfStmtAST *) override;
+  void Visit(WhileStmtAST *) override;
+  void Visit(RetStmtAST *) override;
+  void Visit(AssignStmtAST *) override;
+  void Visit(SQLStmtAST *) override;
+  void Visit(DynamicSQLStmtAST *) override;
+
+ private:
+  FunctionBuilder *fb_;
+  UDFASTContext *udf_ast_context_;
+  CodeGen *codegen_;
+  execution::ast::Expr *dst_;
+  std::unordered_map<std::string, execution::ast::Identifier> str_to_ident_;
+};
+}  // namespace terrier::parser::udf

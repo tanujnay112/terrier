@@ -1,6 +1,7 @@
 #pragma once
 
 #include "type/type_id.h"
+#include "common/exception.h"
 
 namespace terrier::parser::udf {
 class UDFASTContext {
@@ -11,7 +12,13 @@ class UDFASTContext {
     symbol_table_[var] = type;
   }
 
-  type::TypeId GetVariableType(std::string &var) { return symbol_table_[var]; }
+  type::TypeId GetVariableType(const std::string &var) {
+    auto it = symbol_table_.find(var);
+    if(it == symbol_table_.end()){
+      throw PARSER_EXCEPTION("Undeclared variable");
+    }
+    return it->second;
+  }
 
   void AddVariable(std::string name) { local_variables_.push_back(name); }
 

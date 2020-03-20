@@ -15,7 +15,8 @@ namespace terrier::parser::udf {
 class FunctionAST;
 class PLpgSQLParser {
  public:
-  PLpgSQLParser() = default;
+  PLpgSQLParser(common::ManagedPointer<UDFASTContext> udf_ast_context)
+    : udf_ast_context_(udf_ast_context) {}
   std::unique_ptr<FunctionAST> ParsePLpgSQL(std::string func_body, common::ManagedPointer<UDFASTContext> ast_context);
 
  private:

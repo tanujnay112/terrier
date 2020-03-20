@@ -18,9 +18,33 @@ namespace terrier::parser::udf {
 
     // NOLINTNEXTLINE
     TEST_F(UDFParserTestBase, ConstantValueExpressionTest) {
-      PLpgSQLParser udf_parser;
+    {
       UDFASTContext ast_context;
-      auto result = udf_parser.ParsePLpgSQL("BEGIN; IF a < 1000 THEN RETURN a; ELSE RETURN a * 100; END IF; END;",
+      PLpgSQLParser udf_parser((common::ManagedPointer(&ast_context)));
+      auto result = udf_parser.ParsePLpgSQL(" CREATE OR REPLACE FUNCTION dynamic(i double) RETURNS double AS $$ "
+                                            " DECLARE "
+                                            "   d1 double; "
+                                            "   d2 double; "
+                                            "   s varchar; "
+                                            " BEGIN "
+                                            " s := 'SELECT sum(income) from foo;'; "
+//                                            " EXECUTE s into d1; "
+//                                            " EXECUTE 'SELECT sum(income) from foo' into d2; "
+                                            " RETURN 12.0;"
+                                            " END; $$ "
+                                            " LANGUAGE plpgsql;",
                                             common::ManagedPointer(&ast_context));
+    }
+
+//  {
+//    UDFASTContext ast_context;
+//    PLpgSQLParser udf_parser((common::ManagedPointer(&ast_context)));
+//    auto result = udf_parser.ParsePLpgSQL("CREATE OR REPLACE FUNCTION while(a double)"
+//                                          " RETURNS double AS $$ DECLARE n double := a;"
+//                                          "BEGIN LOOP EXIT WHEN n > 1000; n := n + 1; END LOOP;"
+//                                          " RETURN n; END; $$ LANGUAGE plpgsql;",
+//                                          common::ManagedPointer(&ast_context));
+//  }
+
   }
 }

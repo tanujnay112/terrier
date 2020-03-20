@@ -53,6 +53,8 @@ std::unique_ptr<FunctionAST> PLpgSQLParser::ParsePLpgSQL(
 //  LOG_DEBUG("Compiling JSON formatted function %s", ast_json_str.c_str());
   pg_query_free_plpgsql_parse_result(result);
 
+  std::cout << ast_json_str << "\n";
+
   std::istringstream ss(ast_json_str);
   json ast_json;
   ss >> ast_json;
@@ -98,19 +100,19 @@ std::unique_ptr<StmtAST> PLpgSQLParser::ParseBlock(const nlohmann::json &block) 
 
   for (uint32_t i = 0; i < block.size(); i++) {
     const auto stmt = block[i];
-    const auto stmt_names = stmt.begin();
-    TERRIER_ASSERT(stmt_names->size() == 1, "Bad statement size");
-    PARSER_LOG_DEBUG("Statment : %s", stmt_names[0].get<std::string>().c_str());
+    const auto stmt_names = stmt.items().begin();
+//    TERRIER_ASSERT(stmt_names->size() == 1, "Bad statement size");
+    PARSER_LOG_DEBUG("Statement : {}", stmt_names.key());
 
-    if (stmt_names[0] == kPLpgSQL_stmt_return) {
+    if (stmt_names.key() == kPLpgSQL_stmt_return) {
       auto expr = ParseExprSQL(
           stmt[kPLpgSQL_stmt_return][kExpr][kPLpgSQL_expr][kQuery].get<std::string>());
       // TODO(boweic): Handle return stmt w/o expression
       std::unique_ptr<RetStmtAST> ret_stmt_ast(new RetStmtAST(std::move(expr)));
       stmts.push_back(std::move(ret_stmt_ast));
-    } else if (stmt_names[0] == kPLpgSQL_stmt_if) {
+    } else if (stmt_names.key() == kPLpgSQL_stmt_if) {
       stmts.push_back(ParseIf(stmt[kPLpgSQL_stmt_if]));
-    } else if (stmt_names[0] == kPLpgSQL_stmt_assign) {
+    } else if (stmt_names.key() == kPLpgSQL_stmt_assign) {
       // TODO[Siva]: Need to fix Assignment expression / statement
       std::unique_ptr<VariableExprAST> lhs(
           new VariableExprAST(udf_ast_context_->GetVariableAtIndex(
@@ -120,11 +122,11 @@ std::unique_ptr<StmtAST> PLpgSQLParser::ParseBlock(const nlohmann::json &block) 
       std::unique_ptr<AssignStmtAST> ass_expr_ast(
           new AssignStmtAST(std::move(lhs), std::move(rhs)));
       stmts.push_back(std::move(ass_expr_ast));
-    } else if (stmt_names[0] == kPLpgSQL_stmt_while) {
+    } else if (stmt_names.key() == kPLpgSQL_stmt_while) {
       stmts.push_back(ParseWhile(stmt[kPLpgSQL_stmt_while]));
-    } else if (stmt_names[0] == kPLpgSQL_stmt_execsql) {
+    } else if (stmt_names.key() == kPLpgSQL_stmt_execsql) {
       stmts.push_back(ParseSQL(stmt[kPLpgSQL_stmt_execsql]));
-    } else if (stmt_names[0] == kPLpgSQL_stmt_dynexecute) {
+    } else if (stmt_names.key() == kPLpgSQL_stmt_dynexecute) {
       stmts.push_back(ParseDynamicSQL(stmt[kPLpgSQL_stmt_dynexecute]));
     } else {
       throw PARSER_EXCEPTION("Statement type not supported");
@@ -136,17 +138,20 @@ std::unique_ptr<StmtAST> PLpgSQLParser::ParseBlock(const nlohmann::json &block) 
 }
 
 std::unique_ptr<StmtAST> PLpgSQLParser::ParseDecl(const nlohmann::json &decl) {
-  const auto decl_names = decl.begin();
-  TERRIER_ASSERT(decl_names->size() == 1, "Bad declaration names membership size");
-  PARSER_LOG_DEBUG("Declaration : %s", decl_names[0].get<std::string>().c_str());
+  const auto &decl_names = decl.items().begin();
+  for (auto& it : decl.items()) {
+    std::cout << it.key() << " : " << it.value() << "\n";
+  }
+//  TERRIER_ASSERT(decl_names->size() >= 1, "Bad declaration names membership size");
+  PARSER_LOG_DEBUG("Declaration : {}", decl_names.key());
 
-  if (decl_names[0] == kPLpgSQL_var) {
+  if (decl_names.key() == kPLpgSQL_var) {
     auto var_name = decl[kPLpgSQL_var][kRefname].get<std::string>();
     udf_ast_context_->AddVariable(var_name);
     auto type =
         decl[kPLpgSQL_var][kDatatype][kPLpgSQL_type][kTypname].get<std::string>();
 
-    PARSER_LOG_INFO("Registering type %s: %s", var_name.c_str(), type.c_str());
+    PARSER_LOG_INFO("Registering type {0}: {1}", var_name.c_str(), type.c_str());
 
     if (type == "integer") {
       udf_ast_context_->SetVariableType(var_name, type::TypeId::INTEGER);
@@ -165,7 +170,7 @@ std::unique_ptr<StmtAST> PLpgSQLParser::ParseDecl(const nlohmann::json &decl) {
       return std::unique_ptr<DeclStmtAST>(
           new DeclStmtAST(var_name, type::TypeId::INVALID));
     }
-  } else if (decl_names[0] == kPLpgSQL_row) {
+  } else if (decl_names.key() == kPLpgSQL_row) {
     auto var_name = decl[kPLpgSQL_var][kRefname].get<std::string>();
     TERRIER_ASSERT(var_name == "*internal*", "Unexpected refname");
     // TODO[Siva]: Support row types later
@@ -217,7 +222,7 @@ std::unique_ptr<StmtAST> PLpgSQLParser::ParseDynamicSQL(
 
 std::unique_ptr<ExprAST> PLpgSQLParser::ParseExprSQL(
     const std::string expr_sql_str) {
-  PARSER_LOG_DEBUG("Parsing Expr SQL : %s", expr_sql_str.c_str());
+  PARSER_LOG_DEBUG("Parsing Expr SQL : {}", expr_sql_str.c_str());
   auto stmt_list = PostgresParser::BuildParseTree(expr_sql_str.c_str());
   if (stmt_list == nullptr) {
     return nullptr;

@@ -1,16 +1,158 @@
-////===----------------------------------------------------------------------===//
-////
-////                         Peloton
-////
-//// udf_codegen.cpp
-////
-//// Identification: src/udf/udf_codegen.cpp
-////
-//// Copyright (c) 2015-2018, Carnegie Mellon University Database Group
-////
-////===----------------------------------------------------------------------===//
+#include "parser/udf/udf_codegen.h"
+#include "parser/udf/ast_nodes.h"
+
+namespace terrier::parser::udf{
+  void UDFCodegen::GenerateUDF(AbstractAST *ast) { ast->Accept(this); }
+
+void UDFCodegen::Visit(DeclStmtAST *ast) {
+    execution::ast::Identifier ident = codegen_->NewIdentifier("udf");
+    str_to_ident_.emplace(ast->name, ident);
+  fb_->Append(codegen_->DeclareVariable(ident, codegen_->TplType(ast->type), nullptr));
+}
+
+void UDFCodegen::Visit(VariableExprAST *ast) {
+    auto it = str_to_ident_.find(ast->name);
+    TERRIER_ASSERT(it != str_to_ident_.end(), "variable not declared");
+  dst_ = codegen_->MakeExpr(it->second);
+  }
+
+void UDFCodegen::Visit(ValueExprAST *ast) {
+  auto &val = ast->value_;
+  dst_ = codegen_->PeekValue(val);
+}
+
+void UDFCodegen::Visit(AssignStmtAST *ast) {
+  reinterpret_cast<AbstractAST*>(ast->rhs.get())->Accept(this);
+  auto rhs_expr = dst_;
+
+  auto left_type = udf_ast_context_->GetVariableType(ast->lhs->name);
+  auto it = str_to_ident_.find(ast->lhs->name);
+  TERRIER_ASSERT(it != str_to_ident_.end(), "Variable not found");
+  auto left_codegen_ident = it->second;
+
+  auto *left_expr = codegen_->MakeExpr(left_codegen_ident);
+
+//  auto right_type = rhs_expr->GetType()->GetTypeId();
+
+  if (left_type == type::TypeId::VARCHAR) {
+//    llvm::Value *l_val = nullptr, *l_len = nullptr, *l_null = nullptr;
+//    left_codegen_val.ValuesForMaterialization(*codegen_, l_val, l_len, l_null);
 //
-//#include "parser/udf/udf_codegen.h"
+//    llvm::Value *r_val = nullptr, *r_len = nullptr, *r_null = nullptr;
+//    right_codegen_val.ValuesForMaterialization(*codegen_, r_val, r_len, r_null);
+//
+//    (*codegen_)->CreateStore(r_val, l_val);
+//    (*codegen_)->CreateStore(r_len, l_len);
+
+//    return;
+  }
+
+//  if (right_type != left_type) {
+//    // TODO[Siva]: Need to check that they can be casted in semantic analysis
+//    rhs_expr = codegen_->Cast.CastTo(
+//        *codegen_,
+//        codegen::type::Type(ast->lhs->GetVarType(udf_context_), false));
+//  }
+
+//  (*codegen_)-/CreateStore(right_codegen_val.GetValue(), left_val);
+  fb_->Append(codegen_->Assign(left_expr, rhs_expr));
+}
+
+void UDFCodegen::Visit(BinaryExprAST *ast) {
+    execution::parsing::Token::Type op_token;
+    switch(ast->op){
+      case terrier::parser::ExpressionType::OPERATOR_DIVIDE:
+        op_token = execution::parsing::Token::Type::SLASH;
+        break;
+      case terrier::parser::ExpressionType::OPERATOR_PLUS:
+        op_token = execution::parsing::Token::Type::PLUS;
+        break;
+      case terrier::parser::ExpressionType::OPERATOR_MINUS:
+        op_token = execution::parsing::Token::Type::MINUS;
+        break;
+      case terrier::parser::ExpressionType::OPERATOR_MULTIPLY:
+        op_token = execution::parsing::Token::Type::STAR;
+        break;
+      case terrier::parser::ExpressionType::OPERATOR_MOD:
+        op_token = execution::parsing::Token::Type::PERCENT;
+        break;
+      case terrier::parser::ExpressionType::CONJUNCTION_OR:
+        op_token = execution::parsing::Token::Type::OR;
+        break;
+      case terrier::parser::ExpressionType::CONJUNCTION_AND:
+        op_token = execution::parsing::Token::Type::AND;
+        break;
+      default:
+        // TODO(tanujnay112): figure out concatenation operation from expressions?
+        UNREACHABLE("Unsupported expression");
+    }
+    ast->lhs->Accept(this);
+    auto lhs_expr = dst_;
+
+    ast->rhs->Accept(this);
+    auto rhs_expr = dst_;
+    dst_ = codegen_->BinaryOp(op_token, lhs_expr, rhs_expr);
+}
+
+void UDFCodegen::Visit(IfStmtAST *ast) {
+  ast->cond_expr->Accept(this);
+  auto cond = dst_;
+
+  fb_->StartIfStmt(cond);
+  ast->then_stmt->Accept(this);
+  fb_->FinishBlockStmt();
+
+  fb_->StartIfStmt(codegen_->UnaryOp(execution::parsing::Token::Type::BANG, cond));
+  ast->else_stmt->Accept(this);
+  fb_->FinishBlockStmt();
+}
+
+void UDFCodegen::Visit(SeqStmtAST *ast) {
+  for(auto &stmt : ast->stmts){
+    stmt->Accept(this);
+  }
+}
+
+void UDFCodegen::Visit(WhileStmtAST *ast) {
+  ast->cond_expr->Accept(this);
+  auto cond = dst_;
+  fb_->StartForStmt(nullptr, cond, nullptr);
+  ast->body_stmt->Accept(this);
+  fb_->FinishBlockStmt();
+}
+
+void UDFCodegen::Visit(RetStmtAST *ast) {
+  ast->expr->Accept(reinterpret_cast<ASTNodeVisitor*>(this));
+  auto ret_expr = dst_;
+  fb_->Append(codegen_->ReturnStmt(ret_expr));
+}
+
+void UDFCodegen::Visit(SQLStmtAST *ast) {
+//  auto *val = codegen_->ConstStringPtr(ast->query);
+//  auto *len = codegen_->Const32(ast->query.size());
+//  auto left = udf_context_->GetAllocValue(ast->var_name);
+//
+//  // auto &code_context = codegen_->GetCodeContext();
+//
+//  // codegen::FunctionBuilder temp_fun{
+//  //     code_context, "temp_fun_1", codegen_->DoubleType(), {}};
+//  // {
+//  //   temp_fun.ReturnAndFinish(codegen_->ConstDouble(12.0));
+//  // }
+//
+//  // auto *right_val = codegen_->CallFunc(temp_fun.GetFunction(), {});
+//  // (*codegen_)->CreateStore(right_val, left.GetValue());
+//
+//  codegen_->Call(codegen::UDFUtilProxy::ExecuteSQLHelper,
+//                 {val, len, left.GetValue()});
+
+
+  return;
+}
+
+}
+
+
 //
 //#include "catalog/catalog.h"t
 //#include "codegen/buffering_consumer.h"

@@ -117,7 +117,7 @@ class DeclStmtAST : public StmtAST {
 };
 
 // IfStmtAST - Statement class for if/then/else.
-class IfStmtAST : public ExprAST {
+class IfStmtAST : public StmtAST {
  public:
   std::unique_ptr<ExprAST> cond_expr;
   std::unique_ptr<StmtAST> then_stmt, else_stmt;
@@ -133,7 +133,7 @@ class IfStmtAST : public ExprAST {
 };
 
 // WhileAST - Statement class for while loop
-class WhileStmtAST : public ExprAST {
+class WhileStmtAST : public StmtAST {
  public:
   std::unique_ptr<ExprAST> cond_expr;
   std::unique_ptr<StmtAST> body_stmt;
