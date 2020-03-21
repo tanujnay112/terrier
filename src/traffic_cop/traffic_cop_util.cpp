@@ -147,6 +147,8 @@ network::QueryType TrafficCopUtil::QueryTypeForStatement(const common::ManagedPo
       return network::QueryType::QUERY_ANALYZE;
     case parser::StatementType::EXPLAIN:
       return network::QueryType::QUERY_EXPLAIN;
+    case parser::StatementType::CREATE_FUNC:
+      return network::QueryType::QUERY_CREATE_FUNC;
     default:
       return network::QueryType::QUERY_INVALID;
   }

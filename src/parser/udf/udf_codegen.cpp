@@ -10,6 +10,9 @@ void UDFCodegen::Visit(DeclStmtAST *ast) {
   fb_->Append(codegen_->DeclareVariable(ident, codegen_->TplType(ast->type), nullptr));
 }
 
+//void UDFCodegen::Visit(FunctionAST *) {
+//  }
+
 void UDFCodegen::Visit(VariableExprAST *ast) {
     auto it = str_to_ident_.find(ast->name);
     TERRIER_ASSERT(it != str_to_ident_.end(), "variable not declared");

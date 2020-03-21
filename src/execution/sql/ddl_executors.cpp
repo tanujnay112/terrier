@@ -3,11 +3,17 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <parser/udf/ast_nodes.h>
+#include <parser/udf/udf_codegen.h>
 
 #include "catalog/catalog_accessor.h"
 #include "common/macros.h"
 #include "execution/exec/execution_context.h"
+#include "execution/compiler/function_builder.h"
+#include "execution/compiler/codegen.h"
 #include "parser/expression/column_value_expression.h"
+#include "parser/udf/udf_ast_context.h"
+#include "parser/udf/udf_parser.h"
 #include "planner/plannodes/create_database_plan_node.h"
 #include "planner/plannodes/create_index_plan_node.h"
 #include "planner/plannodes/create_namespace_plan_node.h"
@@ -31,6 +37,61 @@ bool DDLExecutors::CreateNamespaceExecutor(const common::ManagedPointer<planner:
                                            const common::ManagedPointer<catalog::CatalogAccessor> accessor) {
   // Request permission from the Catalog to see if this a valid namespace name
   return accessor->CreateNamespace(node->GetNamespaceName()) != catalog::INVALID_NAMESPACE_OID;
+}
+
+bool DDLExecutors::CreateFunctionExecutor(const common::ManagedPointer<planner::CreateFunctionPlanNode> node,
+                                           const common::ManagedPointer<exec::ExecutionContext> exec_ctx) {
+  // Request permission from the Catalog to see if this a valid namespace name
+  TERRIER_ASSERT(node->GetUDFLanguage() == parser::PLType::PL_PGSQL, "Unsupported language");
+  TERRIER_ASSERT(node->GetFunctionBody().size() == 1, "Unsupport function body?");
+
+  // I don't like how we have to separate the two here
+  std::vector<type::TypeId > param_type_ids;
+  std::vector<catalog::type_oid_t> param_types;
+  auto accessor = exec_ctx->GetAccessor();
+  for(auto t : node->GetFunctionParameterTypes()){
+    param_type_ids.push_back(parser::FuncParameter::DataTypeToTypeId(t));
+    param_types.push_back(accessor->GetTypeOidFromTypeId(parser::FuncParameter::DataTypeToTypeId(t)));
+  }
+  auto &body = node->GetFunctionBody().front();
+  auto proc_id =  accessor->CreateProcedure(node->GetFunctionName(), catalog::postgres::PLPGSQL_LANGUAGE_OID,
+      node->GetNamespaceOid(), node->GetFunctionParameterNames(), param_types,
+      param_types, {},
+      accessor->GetTypeOidFromTypeId(parser::ReturnType::DataTypeToTypeId(node->GetReturnType())),
+      body, false);
+  if(proc_id == catalog::INVALID_PROC_OID){
+    return false;
+  }
+
+  // make the context here using the body
+  parser::udf::UDFASTContext ast_context;
+  // parser::udf::UDFContext udf_context;
+  parser::udf::PLpgSQLParser udf_parser((common::ManagedPointer(&ast_context)));
+  std::unique_ptr<parser::udf::FunctionAST> ast =
+      udf_parser.ParsePLpgSQL(body, (common::ManagedPointer(&ast_context)));
+
+  compiler::CodeGen codegen(exec_ctx.Get());
+  util::RegionVector<ast::FieldDecl *> fn_params{codegen.Region()};
+  for(size_t i = 0;i < node->GetFunctionParameterNames().size();i++){
+    auto name = node->GetFunctionParameterNames()[i];
+    auto type = parser::ReturnType::DataTypeToTypeId(node->GetFunctionParameterTypes()[i]);
+    fn_params.emplace_back(codegen.MakeField(ast::Identifier{name.c_str()}, codegen.TplType(type)));
+  }
+
+  compiler::FunctionBuilder fb{&codegen, ast::Identifier{node->GetFunctionName().c_str()}, std::move(fn_params),
+                               codegen.TplType(parser::ReturnType::DataTypeToTypeId(node->GetReturnType()))};
+  parser::udf::UDFCodegen udf_codegen{&fb, nullptr};
+  udf_codegen.GenerateUDF(ast->body.get());
+  ast::FunctionDecl *funct = fb.Finish();
+
+  udf::UDFContext *udf_context = new udf::UDFContext(node->GetFunctionName(),
+      parser::ReturnType::DataTypeToTypeId(node->GetReturnType()), std::move(param_type_ids),
+      common::ManagedPointer<ast::FunctionDecl>(funct), codegen.ReleaseRegion());
+  if(!accessor->SetProcCtxPtr(proc_id, udf_context)){
+    delete udf_context;
+    return false;
+  }
+  return true;
 }
 
 bool DDLExecutors::CreateTableExecutor(const common::ManagedPointer<planner::CreateTablePlanNode> node,

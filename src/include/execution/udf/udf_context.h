@@ -6,6 +6,7 @@
 
 #include "catalog/catalog_defs.h"
 #include "common/managed_pointer.h"
+#include "execution/ast/ast.h"
 #include "execution/ast/builtins.h"
 #include "type/type_id.h"
 
@@ -17,7 +18,7 @@ namespace terrier::execution::udf {
 class UDFContext {
  public:
   /**
-   * Creates a UDFContext object
+   * Creates a non-builtin UDFContext object
    * @param func_name Name of function
    * @param func_ret_type Return type of function
    * @param args_type Vector of argument types
@@ -81,13 +82,30 @@ class UDFContext {
     return is_exec_ctx_required_;
   }
 
+  /**
+   * @return returns the function declaration ast (to be used only if not builtin)
+   */
+  common::ManagedPointer<ast::FunctionDecl> GetFunctionDecl() const {
+    TERRIER_ASSERT(!IsBuiltin(), "Getting a non-builtin from a builtin function");
+    return fn_decl_;
+  }
+
  private:
   std::string func_name_;
   type::TypeId func_ret_type_;
   std::vector<type::TypeId> args_type_;
+
   bool is_builtin_;
   ast::Builtin builtin_;
   bool is_exec_ctx_required_;
+
+  /**
+   * @return returns if this function requires an execution context
+   */
+  bool IsExecCtxRequired() const {
+    TERRIER_ASSERT(IsBuiltin(), "IsExecCtxRequired is only valid or a builtin function");
+    return is_exec_ctx_required_;
+  }
 };
 
 }  // namespace terrier::execution::udf

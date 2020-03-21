@@ -161,6 +161,18 @@ void TrafficCop::ExecuteCreateStatement(const common::ManagedPointer<network::Co
       }
       break;
     }
+    case network::QueryType::QUERY_CREATE_FUNC: {
+      auto exec_ctx = std::make_unique<execution::exec::ExecutionContext>(
+          connection_ctx->GetDatabaseOid(), connection_ctx->Transaction(),
+          nullptr, physical_plan->GetOutputSchema().Get(),
+          connection_ctx->Accessor());
+      if (execution::sql::DDLExecutors::CreateFunctionExecutor(
+          physical_plan.CastManagedPointerTo<planner::CreateFunctionPlanNode>(), exec_ctx)) {
+        out->WriteCommandComplete(query_type, 0);
+        return;
+      }
+      break;
+    }
     default: {
       out->WriteErrorResponse("ERROR:  unsupported CREATE statement type");
       return;

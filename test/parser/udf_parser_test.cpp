@@ -27,7 +27,7 @@ namespace terrier::parser::udf {
                                             "   d2 double; "
                                             "   s varchar; "
                                             " BEGIN "
-                                            " s := 'SELECT sum(income) from foo;'; "
+//                                            " SELECT sum(income) INTO STRICT d1 from foo; "
 //                                            " EXECUTE s into d1; "
 //                                            " EXECUTE 'SELECT sum(income) from foo' into d2; "
                                             " RETURN 12.0;"

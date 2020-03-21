@@ -3,7 +3,7 @@
 #include "execution/compiler/function_builder.h"
 #include "ast_node_visitor.h"
 #include "udf_ast_context.h"
-#include "udf_context.h"
+#include "execution/udf/udf_context.h"
 
 namespace terrier::parser::udf {
 using namespace execution::compiler;
@@ -28,11 +28,12 @@ class UDFCodegen : ASTNodeVisitor {
  public:
 
   UDFCodegen(FunctionBuilder *fb,
-             UDFContext *udf_Context) : fb_{fb} {};
+             execution::udf::UDFContext *udf_context) : fb_{fb} {};
   ~UDFCodegen(){};
 
   void GenerateUDF(AbstractAST *);
   void Visit(AbstractAST *) override;
+//  void Visit(FunctionAST *) override;
   void Visit(StmtAST *) override;
   void Visit(ExprAST *) override;
   void Visit(ValueExprAST *) override;

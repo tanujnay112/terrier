@@ -2351,6 +2351,9 @@ bool DatabaseCatalog::CreateProcedure(const common::ManagedPointer<transaction::
 
   // Insert into table
   if (!TryLock(txn)) return false;
+
+  // make everything here?
+
   const auto name_varlen = storage::StorageUtil::CreateVarlen(procname);
 
   std::vector<std::string> arg_name_vec;

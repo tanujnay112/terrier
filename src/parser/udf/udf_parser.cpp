@@ -39,7 +39,7 @@ const std::string kPLpgSQL_row = "PLpgSQL_row";
 const std::string kPLpgSQL_stmt_dynexecute = "PLpgSQL_stmt_dynexecute";
 
 std::unique_ptr<FunctionAST> PLpgSQLParser::ParsePLpgSQL(
-    std::string func_body, common::ManagedPointer<UDFASTContext> ast_context) {
+    const std::string &func_body, common::ManagedPointer<UDFASTContext> ast_context) {
   auto result = pg_query_parse_plpgsql(func_body.c_str());
   if (result.error) {
     PARSER_LOG_DEBUG("PL/pgSQL parse error : {}", result.error->message);
@@ -171,7 +171,7 @@ std::unique_ptr<StmtAST> PLpgSQLParser::ParseDecl(const nlohmann::json &decl) {
           new DeclStmtAST(var_name, type::TypeId::INVALID));
     }
   } else if (decl_names.key() == kPLpgSQL_row) {
-    auto var_name = decl[kPLpgSQL_var][kRefname].get<std::string>();
+    auto var_name = decl[kPLpgSQL_row][kRefname].get<std::string>();
     TERRIER_ASSERT(var_name == "*internal*", "Unexpected refname");
     // TODO[Siva]: Support row types later
     udf_ast_context_->SetVariableType(var_name, type::TypeId::INVALID);
@@ -204,10 +204,27 @@ std::unique_ptr<StmtAST> PLpgSQLParser::ParseWhile(const nlohmann::json &loop) {
 
 std::unique_ptr<StmtAST> PLpgSQLParser::ParseSQL(const nlohmann::json &sql_stmt) {
   PARSER_LOG_DEBUG("ParseSQL");
-  auto sql_query = sql_stmt[kSqlstmt][kPLpgSQL_expr][kQuery].get<std::string>();
-  auto var_name = sql_stmt[kRow][kPLpgSQL_row][kFields][0][kName].get<std::string>();
-  return std::unique_ptr<SQLStmtAST>(
-      new SQLStmtAST(std::move(sql_query), std::move(var_name)));
+//  auto sql_query = sql_stmt[kSqlstmt][kPLpgSQL_expr][kQuery].get<std::string>();
+//  auto var_name = sql_stmt[kRow][kPLpgSQL_row][kFields][0][kName].get<std::string>();
+//  auto parse_result = PostgresParser::BuildParseTree(sql_query.c_str());
+//  if (parse_result == nullptr) {
+//    PARSER_LOG_DEBUG("Bad SQL statement");
+//    return nullptr;
+//  }
+//  try {
+//    // TODO(Matt): I don't think the binder should need the database name. It's already bound in the ConnectionContext
+//    binder::BindNodeVisitor visitor(accessor_, db_name_);
+//    visitor.BindNameToNode(parse_result->GetStatement(0), parse_result.get());
+//  } catch (...) {
+//    PARSER_LOG_DEBUG("Bad SQL statement");
+//    return nullptr;
+//  }
+
+
+
+//  return std::unique_ptr<SQLStmtAST>(
+//      new SQLStmtAST(std::move(sql_query), std::move(var_name)));
+  return nullptr;
 }
 
 std::unique_ptr<StmtAST> PLpgSQLParser::ParseDynamicSQL(

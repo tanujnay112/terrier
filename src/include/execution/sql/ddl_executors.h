@@ -4,6 +4,8 @@
 
 #include "catalog/catalog_defs.h"
 #include "common/managed_pointer.h"
+#include "execution/exec/execution_context.h"
+#include "planner/plannodes/create_function_plan_node.h"
 namespace terrier::planner {
 class CreateDatabasePlanNode;
 class CreateNamespacePlanNode;
@@ -48,6 +50,9 @@ class DDLExecutors {
    */
   static bool CreateNamespaceExecutor(common::ManagedPointer<planner::CreateNamespacePlanNode> node,
                                       common::ManagedPointer<catalog::CatalogAccessor> accessor);
+
+  static bool CreateFunctionExecutor(common::ManagedPointer<planner::CreateFunctionPlanNode> node,
+                                     common::ManagedPointer<exec::ExecutionContext> exec_ctx);
 
   /**
    * @param node node to executed
