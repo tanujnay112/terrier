@@ -8,6 +8,8 @@ namespace terrier::execution::compiler {
 ConstantTranslator::ConstantTranslator(const terrier::parser::AbstractExpression *expression, CodeGen *codegen)
     : ExpressionTranslator(expression, codegen) {}
 
+void ConstantTranslator::InitTopLevelDecls(util::RegionVector<ast::Decl *> *decls) {}
+
 ast::Expr *ConstantTranslator::DeriveExpr(ExpressionEvaluator *evaluator) {
   auto const_val = GetExpressionAs<terrier::parser::ConstantValueExpression>();
   auto trans_val = const_val->GetValue();

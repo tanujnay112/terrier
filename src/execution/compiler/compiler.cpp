@@ -160,10 +160,12 @@ void Compiler::GenFunction(execution::util::RegionVector<execution::ast::Decl *>
   for (const auto &stmt : stmts) {
     builder.Append(stmt);
   }
-  top_level->emplace_back(builder.Finish());
+
+  auto new_decls = builder.Finish();
+  top_level->insert(top_level->end(), new_decls.begin(), new_decls.end());
 }
 
-ast::Decl *Compiler::GenMainFunction() {
+std::vector<ast::Decl *> Compiler::GenMainFunction() {
   // Function name
   ast::Identifier fn_name = codegen_->GetMainFn();
 

@@ -82,11 +82,13 @@ bool DDLExecutors::CreateFunctionExecutor(const common::ManagedPointer<planner::
                                codegen.TplType(parser::ReturnType::DataTypeToTypeId(node->GetReturnType()))};
   parser::udf::UDFCodegen udf_codegen{&fb, nullptr};
   udf_codegen.GenerateUDF(ast->body.get());
-  ast::FunctionDecl *funct = fb.Finish();
+  auto decls = fb.Finish();
+  util::RegionVector<ast::Decl *> decls_reg_vec{decls.begin(), decls.end(), codegen.Region()};
+  auto file = codegen.Compile(std::move(decls_reg_vec));
 
   udf::UDFContext *udf_context = new udf::UDFContext(node->GetFunctionName(),
       parser::ReturnType::DataTypeToTypeId(node->GetReturnType()), std::move(param_type_ids),
-      common::ManagedPointer<ast::FunctionDecl>(funct), codegen.ReleaseRegion());
+      common::ManagedPointer<ast::File>(file), codegen.ReleaseRegion());
   if(!accessor->SetProcCtxPtr(proc_id, udf_context)){
     delete udf_context;
     return false;

@@ -51,6 +51,12 @@ class ExpressionTranslator {
   virtual ~ExpressionTranslator() = default;
 
   /**
+   * Add top-level declarations
+   * @param decls list of top-level declarations
+   */
+  virtual void InitTopLevelDecls(util::RegionVector<ast::Decl *> *decls) = 0;
+
+  /**
    * @param evaluator The expression evaluator to use
    * @return resulting TPL expression
    */

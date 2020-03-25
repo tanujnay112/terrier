@@ -8,6 +8,8 @@ namespace terrier::execution::compiler {
 ParamValueTranslator::ParamValueTranslator(const terrier::parser::AbstractExpression *expression, CodeGen *codegen)
     : ExpressionTranslator(expression, codegen) {}
 
+void ParamValueTranslator::InitTopLevelDecls(util::RegionVector<ast::Decl *> *decls) {}
+
 ast::Expr *ParamValueTranslator::DeriveExpr(ExpressionEvaluator *evaluator) {
   auto param_val = GetExpressionAs<terrier::parser::ParameterValueExpression>();
   auto param_idx = param_val->GetValueIdx();

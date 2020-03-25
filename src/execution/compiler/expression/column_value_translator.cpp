@@ -7,6 +7,9 @@ namespace terrier::execution::compiler {
 ColumnValueTranslator::ColumnValueTranslator(const terrier::parser::AbstractExpression *expression, CodeGen *codegen)
     : ExpressionTranslator(expression, codegen) {}
 
+
+void ColumnValueTranslator::InitTopLevelDecls(util::RegionVector<ast::Decl *> *decls) {}
+
 ast::Expr *ColumnValueTranslator::DeriveExpr(ExpressionEvaluator *evaluator) {
   auto column_val = GetExpressionAs<parser::ColumnValueExpression>();
   return evaluator->GetTableColumn(column_val->GetColumnOid());

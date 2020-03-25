@@ -8,6 +8,8 @@ namespace terrier::execution::compiler {
 StarTranslator::StarTranslator(const terrier::parser::AbstractExpression *expression, CodeGen *codegen)
     : ExpressionTranslator(expression, codegen) {}
 
+void StarTranslator::InitTopLevelDecls(util::RegionVector<ast::Decl *> *decls) {}
+
 ast::Expr *StarTranslator::DeriveExpr(ExpressionEvaluator *evaluator) {
   // TODO(Amadou): COUNT(*) will increment its counter regardless of the input we pass in.
   // So the value we return here does not matter. The StarExpression can just be replaced by a constant.

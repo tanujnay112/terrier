@@ -16,6 +16,12 @@ class StarTranslator : public ExpressionTranslator {
    */
   StarTranslator(const terrier::parser::AbstractExpression *expression, CodeGen *codegen);
 
+  /**
+   * Add top-level declarations
+   * @param decls list of top-level declarations
+   */
+  void InitTopLevelDecls(util::RegionVector<ast::Decl *> *decls) override;
+
   ast::Expr *DeriveExpr(ExpressionEvaluator *evaluator) override;
 };
 }  // namespace terrier::execution::compiler

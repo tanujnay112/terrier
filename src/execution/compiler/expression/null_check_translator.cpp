@@ -7,6 +7,8 @@ NullCheckTranslator::NullCheckTranslator(const terrier::parser::AbstractExpressi
     : ExpressionTranslator(expression, codegen),
       child_{TranslatorFactory::CreateExpressionTranslator(expression->GetChild(0).Get(), codegen)} {}
 
+void NullCheckTranslator::InitTopLevelDecls(util::RegionVector<ast::Decl *> *decls) {}
+
 ast::Expr *NullCheckTranslator::DeriveExpr(ExpressionEvaluator *evaluator) {
   auto type = expression_->GetExpressionType();
   auto child_expr = child_->DeriveExpr(evaluator);

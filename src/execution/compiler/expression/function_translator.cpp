@@ -14,13 +14,15 @@ FunctionTranslator::FunctionTranslator(const terrier::parser::AbstractExpression
   }
 }
 
+void FunctionTranslator::InitTopLevelDecls(util::RegionVector<ast::Decl *> *decls) {}
+
 ast::Expr *FunctionTranslator::DeriveExpr(ExpressionEvaluator *evaluator) {
   auto func_expr = GetExpressionAs<parser::FunctionExpression>();
   auto proc_oid = func_expr->GetProcOid();
   auto udf_ctx = codegen_->Accessor()->GetUDFContext(proc_oid);
-  if (!udf_ctx->IsBuiltin()) {
-    UNREACHABLE("We don't support non-builtin UDF's yet!");
-  }
+//  if (!udf_ctx->IsBuiltin()) {
+//    UNREACHABLE("We don't support non-builtin UDF's yet!");
+//  }
 
   std::vector<ast::Expr *> params;
   if (udf_ctx->IsExecCtxRequired()) {
@@ -28,6 +30,14 @@ ast::Expr *FunctionTranslator::DeriveExpr(ExpressionEvaluator *evaluator) {
   }
   for (auto &param : params_) {
     params.push_back(param->DeriveExpr(evaluator));
+  }
+
+  if (!udf_ctx->IsBuiltin()) {
+//    UNREACHABLE("We don't support non-builtin UDF's yet!");
+    auto decl_vec = udf_ctx->GetFile()->Declarations();
+    for(auto decl : decl_vec){
+    }
+    codegen_->ExecCall(udf_ctx->GetFunctionDecl()->Name());
   }
 
   return codegen_->BuiltinCall(udf_ctx->GetBuiltin(), std::move(params));
