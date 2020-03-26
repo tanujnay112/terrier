@@ -1754,12 +1754,6 @@ void DatabaseCatalog::BootstrapProcs(const common::ManagedPointer<transaction::T
   CreateProcedure(txn, pro_oid, str_name, postgres::INTERNAL_LANGUAGE_OID, postgres::NAMESPACE_DEFAULT_NAMESPACE_OID, \
                   {"theta"}, {dec_type}, {dec_type}, {}, dec_type, "", true);
 
-#define BOOTSTRAP_TRIG_FN(str_name, pro_oid, builtin)                                                                 \
-  CreateProcedure(txn, pro_oid, str_name, postgres::INTERNAL_LANGUAGE_OID, postgres::NAMESPACE_DEFAULT_NAMESPACE_OID, \
-                  {"theta"}, {dec_type}, {dec_type}, {}, dec_type, "", true);                                         \
-  udf_context = new execution::udf::UDFContext(str_name, type::TypeId::DECIMAL, {type::TypeId::DECIMAL}, builtin);    \
-  SetProcCtxPtr(txn, pro_oid, udf_context);
-
   // ACos
   BOOTSTRAP_TRIG_FN("acos", postgres::ACOS_PRO_OID, execution::ast::Builtin::ACos)
 

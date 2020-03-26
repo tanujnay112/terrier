@@ -610,6 +610,8 @@ class CodeGen {
    * Signature: (state: *State, execCtx: *ExecutionContext) -> nil
    */
   ast::Identifier teardown_fn_;
+
+//  std::unordered_set<std::unique_ptr<ExpressionTranslator>> cached_expr_translators_;
 };
 
 }  // namespace terrier::execution::compiler
