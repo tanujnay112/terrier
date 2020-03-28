@@ -4,6 +4,26 @@
 namespace terrier::parser::udf{
   void UDFCodegen::GenerateUDF(AbstractAST *ast) { ast->Accept(this); }
 
+void UDFCodegen::Visit(AbstractAST *ast) {
+  UNREACHABLE("Not implemented");
+}
+
+void UDFCodegen::Visit(DynamicSQLStmtAST *ast) {
+  UNREACHABLE("Not implemented");
+}
+
+void UDFCodegen::Visit(CallExprAST *ast) {
+  UNREACHABLE("Not implemented");
+}
+
+void UDFCodegen::Visit(StmtAST *ast) {
+  UNREACHABLE("Not implemented");
+}
+
+void UDFCodegen::Visit(ExprAST *ast) {
+  UNREACHABLE("Not implemented");
+}
+
 void UDFCodegen::Visit(DeclStmtAST *ast) {
     execution::ast::Identifier ident = codegen_->NewIdentifier("udf");
     str_to_ident_.emplace(ast->name, ident);

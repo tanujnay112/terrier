@@ -44,7 +44,8 @@ class UDFContext {
         args_type_(std::move(args_type)),
         is_builtin_{true},
         builtin_{builtin},
-        is_exec_ctx_required_{is_exec_ctx_required} {}
+        is_exec_ctx_required_{is_exec_ctx_required},
+        ast_region_{nullptr} {}
   /**
    * @return The name of the function represented by this context object
    */

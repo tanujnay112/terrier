@@ -46,7 +46,7 @@ class Compiler {
   void GenFunction(util::RegionVector<ast::Decl *> *top_level, ast::Identifier fn_name,
                    util::RegionVector<ast::Stmt *> &&stmts);
   // Generate main.
-  std::vector<ast::Decl *> GenMainFunction();
+  ast::Decl *GenMainFunction();
 
   query_id_t query_identifier_;
   CodeGen *codegen_;

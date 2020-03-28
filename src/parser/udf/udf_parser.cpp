@@ -44,8 +44,7 @@ std::unique_ptr<FunctionAST> PLpgSQLParser::ParsePLpgSQL(
   if (result.error) {
     PARSER_LOG_DEBUG("PL/pgSQL parse error : {}", result.error->message);
     pg_query_free_plpgsql_parse_result(result);
-    throw PARSER_EXCEPTION(("PL/pgSQL parsing error : " +
-        std::string(result.error->message)).c_str());
+    throw PARSER_EXCEPTION("PL/pgSQL parsing error");
   }
   // The result is a list, we need to wrap it
   std::string ast_json_str = "{ \"" + kFunctionList +

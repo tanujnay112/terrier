@@ -29,5 +29,6 @@ class FunctionTranslator : public ExpressionTranslator {
 
  private:
   std::vector<std::unique_ptr<ExpressionTranslator>> params_;
+  common::ManagedPointer<udf::UDFContext> udf_context_;
 };
 }  // namespace terrier::execution::compiler

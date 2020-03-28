@@ -53,7 +53,7 @@ bool DDLExecutors::CreateFunctionExecutor(const common::ManagedPointer<planner::
     param_type_ids.push_back(parser::FuncParameter::DataTypeToTypeId(t));
     param_types.push_back(accessor->GetTypeOidFromTypeId(parser::FuncParameter::DataTypeToTypeId(t)));
   }
-  auto &body = node->GetFunctionBody().front();
+  auto body = node->GetFunctionBody().front();
   auto proc_id =  accessor->CreateProcedure(node->GetFunctionName(), catalog::postgres::PLPGSQL_LANGUAGE_OID,
       node->GetNamespaceOid(), node->GetFunctionParameterNames(), param_types,
       param_types, {},
@@ -82,9 +82,10 @@ bool DDLExecutors::CreateFunctionExecutor(const common::ManagedPointer<planner::
                                codegen.TplType(parser::ReturnType::DataTypeToTypeId(node->GetReturnType()))};
   parser::udf::UDFCodegen udf_codegen{&fb, nullptr};
   udf_codegen.GenerateUDF(ast->body.get());
-  auto decls = fb.Finish();
-  util::RegionVector<ast::Decl *> decls_reg_vec{decls.begin(), decls.end(), codegen.Region()};
-  auto file = codegen.Compile(std::move(decls_reg_vec));
+  auto fn = fb.Finish();
+//  util::RegionVector<ast::Decl *> decls_reg_vec{decls->begin(), decls->end(), codegen.Region()};
+  util::RegionVector<ast::Decl*> decls({fn}, codegen.Region());
+  auto file = codegen.Compile(std::move(decls));
 
   udf::UDFContext *udf_context = new udf::UDFContext(node->GetFunctionName(),
       parser::ReturnType::DataTypeToTypeId(node->GetReturnType()), std::move(param_type_ids),
@@ -199,6 +200,13 @@ bool DDLExecutors::DropIndexExecutor(const common::ManagedPointer<planner::DropI
   // TODO(Matt): CASCADE?
   return result;
 }
+
+//bool DDLExecutors::DropFunctionExecutor(const common::ManagedPointer<planner::DropIndexPlanNode> node,
+//                                     const common::ManagedPointer<catalog::CatalogAccessor> accessor) {
+//  const bool result = accessor->DropIndex(node->GetIndexOid());
+//  // TODO(Matt): CASCADE?
+//  return result;
+//}
 
 bool DDLExecutors::CreateIndex(const common::ManagedPointer<catalog::CatalogAccessor> accessor,
                                const catalog::namespace_oid_t ns, const std::string &name,

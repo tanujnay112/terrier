@@ -102,7 +102,7 @@ struct FuncParameter : BaseFunctionParameter {
   const std::string name_;
 };
 
-using FunctionParameter = type::TypeId;
+//using FunctionParameter = type::TypeId;
 
 /**
  * CreateFunctionStatement represents the sql "CREATE FUNCTION ...".

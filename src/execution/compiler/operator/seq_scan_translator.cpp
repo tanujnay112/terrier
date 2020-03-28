@@ -25,6 +25,16 @@ SeqScanTranslator::SeqScanTranslator(const terrier::planner::SeqScanPlanNode *op
       slot_(codegen->NewIdentifier("slot")),
       pci_type_{codegen->Context()->GetIdentifier("ProjectedColumnsIterator")} {}
 
+void SeqScanTranslator::InitializeHelperFunctions(util::RegionVector<ast::Decl *> *decls) {
+  auto &columns = op_->GetOutputSchema()->GetColumns();
+
+  // very inefficient
+  for(auto &col : columns){
+    auto translator = TranslatorFactory::CreateExpressionTranslator(col.GetExpr().Get(), codegen_);
+    translator->InitTopLevelDecls(decls);
+  }
+}
+
 void SeqScanTranslator::Produce(FunctionBuilder *builder) {
   SetOids(builder);
   DeclareTVI(builder);

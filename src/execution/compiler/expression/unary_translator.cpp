@@ -7,7 +7,9 @@ UnaryTranslator::UnaryTranslator(const terrier::parser::AbstractExpression *expr
     : ExpressionTranslator(expression, codegen),
       child_(TranslatorFactory::CreateExpressionTranslator(expression->GetChild(0).Get(), codegen)) {}
 
-void UnaryTranslator::InitTopLevelDecls(util::RegionVector<ast::Decl *> *decls) {}
+void UnaryTranslator::InitTopLevelDecls(util::RegionVector<ast::Decl *> *decls) {
+  child_->InitTopLevelDecls(decls);
+}
 
 ast::Expr *UnaryTranslator::DeriveExpr(ExpressionEvaluator *evaluator) {
   auto *child_expr = child_->DeriveExpr(evaluator);

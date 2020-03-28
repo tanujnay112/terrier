@@ -23,6 +23,7 @@
 namespace terrier::execution::compiler {
 
 class FunctionBuilder;
+//class ExpressionTranslator;
 
 /**
  * Bundles convenience methods needed by other classes during code generation.
@@ -575,6 +576,7 @@ class CodeGen {
    * @return The expression corresponding to the builtin call.
    */
   ast::Expr *ZeroArgCall(ast::Builtin builtin);
+
 
  private:
   // Counter for the identifiers. Allows the creation of unique names.

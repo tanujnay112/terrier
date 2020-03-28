@@ -29,8 +29,7 @@ class SeqScanTranslator : public OperatorTranslator {
   // Does nothing
   void InitializeStructs(util::RegionVector<ast::Decl *> *decls) override {}
 
-  // Does nothing
-  void InitializeHelperFunctions(util::RegionVector<ast::Decl *> *decls) override {}
+  void InitializeHelperFunctions(util::RegionVector<ast::Decl *> *decls) override;
 
   // Does nothing
   void InitializeSetup(util::RegionVector<ast::Stmt *> *setup_stmts) override {}

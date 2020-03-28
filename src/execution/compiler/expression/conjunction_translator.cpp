@@ -9,7 +9,10 @@ ConjunctionTranslator::ConjunctionTranslator(const terrier::parser::AbstractExpr
       left_(TranslatorFactory::CreateExpressionTranslator(expression_->GetChild(0).Get(), codegen_)),
       right_(TranslatorFactory::CreateExpressionTranslator(expression_->GetChild(1).Get(), codegen_)) {}
 
-void ConjunctionTranslator::InitTopLevelDecls(util::RegionVector<ast::Decl *> *decls) {}
+void ConjunctionTranslator::InitTopLevelDecls(util::RegionVector<ast::Decl *> *decls) {
+  left_->InitTopLevelDecls(decls);
+  right_->InitTopLevelDecls(decls);
+}
 
 ast::Expr *ConjunctionTranslator::DeriveExpr(ExpressionEvaluator *evaluator) {
   auto *left_expr = left_->DeriveExpr(evaluator);

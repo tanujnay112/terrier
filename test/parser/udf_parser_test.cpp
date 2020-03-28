@@ -21,15 +21,9 @@ namespace terrier::parser::udf {
     {
       UDFASTContext ast_context;
       PLpgSQLParser udf_parser((common::ManagedPointer(&ast_context)));
-      auto result = udf_parser.ParsePLpgSQL(" CREATE OR REPLACE FUNCTION dynamic(i double) RETURNS double AS $$ "
+      auto result = udf_parser.ParsePLpgSQL(" CREATE OR REPLACE FUNCTION dynamic() RETURNS double AS $$ "
                                             " DECLARE "
-                                            "   d1 double; "
-                                            "   d2 double; "
-                                            "   s varchar; "
                                             " BEGIN "
-//                                            " SELECT sum(income) INTO STRICT d1 from foo; "
-//                                            " EXECUTE s into d1; "
-//                                            " EXECUTE 'SELECT sum(income) from foo' into d2; "
                                             " RETURN 12.0;"
                                             " END; $$ "
                                             " LANGUAGE plpgsql;",

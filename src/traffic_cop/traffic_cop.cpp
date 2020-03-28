@@ -120,7 +120,8 @@ void TrafficCop::ExecuteCreateStatement(const common::ManagedPointer<network::Co
   TERRIER_ASSERT(
       query_type == network::QueryType::QUERY_CREATE_TABLE || query_type == network::QueryType::QUERY_CREATE_SCHEMA ||
           query_type == network::QueryType::QUERY_CREATE_INDEX || query_type == network::QueryType::QUERY_CREATE_DB ||
-          query_type == network::QueryType::QUERY_CREATE_VIEW || query_type == network::QueryType::QUERY_CREATE_TRIGGER,
+          query_type == network::QueryType::QUERY_CREATE_VIEW || query_type == network::QueryType::QUERY_CREATE_TRIGGER
+          || query_type == network::QueryType::QUERY_CREATE_FUNC,
       "ExecuteCreateStatement called with invalid QueryType.");
   switch (query_type) {
     case network::QueryType::QUERY_CREATE_TABLE: {
@@ -167,7 +168,8 @@ void TrafficCop::ExecuteCreateStatement(const common::ManagedPointer<network::Co
           nullptr, physical_plan->GetOutputSchema().Get(),
           connection_ctx->Accessor());
       if (execution::sql::DDLExecutors::CreateFunctionExecutor(
-          physical_plan.CastManagedPointerTo<planner::CreateFunctionPlanNode>(), exec_ctx)) {
+          physical_plan.CastManagedPointerTo<planner::CreateFunctionPlanNode>(),
+              common::ManagedPointer<execution::exec::ExecutionContext>(exec_ctx))) {
         out->WriteCommandComplete(query_type, 0);
         return;
       }
@@ -191,6 +193,7 @@ void TrafficCop::ExecuteDropStatement(const common::ManagedPointer<network::Conn
       query_type == network::QueryType::QUERY_DROP_TABLE || query_type == network::QueryType::QUERY_DROP_SCHEMA ||
           query_type == network::QueryType::QUERY_DROP_INDEX || query_type == network::QueryType::QUERY_DROP_DB ||
           query_type == network::QueryType::QUERY_DROP_VIEW || query_type == network::QueryType::QUERY_DROP_TRIGGER,
+//          query_type == network::QueryType::QUERY_DROP_FUNC,
       "ExecuteDropStatement called with invalid QueryType.");
   switch (query_type) {
     case network::QueryType::QUERY_DROP_TABLE: {
@@ -231,6 +234,19 @@ void TrafficCop::ExecuteDropStatement(const common::ManagedPointer<network::Conn
       }
       break;
     }
+//    case network::QueryType::QUERY_DROP_FUNC {
+//      auto exec_ctx = std::make_unique<execution::exec::ExecutionContext>(
+//          connection_ctx->GetDatabaseOid(), connection_ctx->Transaction(),
+//          nullptr, physical_plan->GetOutputSchema().Get(),
+//          connection_ctx->Accessor());
+//      if (execution::sql::DDLExecutors::CreateFunctionExecutor(
+//          physical_plan.CastManagedPointerTo<planner::CreateFunctionPlanNode>(),
+//          common::ManagedPointer<execution::exec::ExecutionContext>(exec_ctx))) {
+//        out->WriteCommandComplete(query_type, 0);
+//        return;
+//      }
+//      break;
+//    }
     default: {
       out->WriteErrorResponse("ERROR:  unsupported DROP statement type");
       break;

@@ -11,7 +11,7 @@
 #include "type/type_id.h"
 #include "type/transient_value.h"
 #include "ast_node_visitor.h"
-#include "udf_context.h"
+#include "execution/udf/udf_context.h"
 
 namespace terrier::parser::udf {
 

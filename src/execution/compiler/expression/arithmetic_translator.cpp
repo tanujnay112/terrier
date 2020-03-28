@@ -8,7 +8,10 @@ ArithmeticTranslator::ArithmeticTranslator(const terrier::parser::AbstractExpres
       left_(TranslatorFactory::CreateExpressionTranslator(expression_->GetChild(0).Get(), codegen_)),
       right_(TranslatorFactory::CreateExpressionTranslator(expression_->GetChild(1).Get(), codegen_)) {}
 
-void ArithmeticTranslator::InitTopLevelDecls(util::RegionVector<ast::Decl *> *decls) {}
+void ArithmeticTranslator::InitTopLevelDecls(util::RegionVector<ast::Decl *> *decls) {
+  left_->InitTopLevelDecls(decls);
+  right_->InitTopLevelDecls(decls);
+}
 
 ast::Expr *ArithmeticTranslator::DeriveExpr(ExpressionEvaluator *evaluator) {
   auto *left_expr = left_->DeriveExpr(evaluator);
