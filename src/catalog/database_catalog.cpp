@@ -1783,10 +1783,6 @@ void DatabaseCatalog::BootstrapProcs(const common::ManagedPointer<transaction::T
   CreateProcedure(txn, postgres::LOWER_PRO_OID, "lower", postgres::INTERNAL_LANGUAGE_OID,
                   postgres::NAMESPACE_DEFAULT_NAMESPACE_OID, {"str"}, {str_type}, {str_type}, {}, str_type, "", true);
 
-  udf_context = new execution::udf::UDFContext("lower", type::TypeId::VARCHAR, {type::TypeId::VARCHAR},
-                                               execution::ast::Builtin::Lower);
-  SetProcCtxPtr(txn, postgres::LOWER_PRO_OID, udf_context);
-
   // TODO(tanujnay112): no op codes for lower and upper yet
 
   BootstrapProcContexts(txn);

@@ -55,6 +55,14 @@ util::RegionVector<ast::FieldDecl *> CodeGen::ExecParams() {
   return {{state_param, exec_ctx_param}, Region()};
 }
 
+ast::Expr *CodeGen::ExecCallExpr(ast::Identifier fn_name) {
+  ast::Expr *func = MakeExpr(fn_name);
+  ast::Expr *state_arg = PointerTo(state_var_);
+  ast::Expr *exec_ctx_arg = MakeExpr(exec_ctx_var_);
+  util::RegionVector<ast::Expr *> params{{state_arg, exec_ctx_arg}, Region()};
+  return Factory()->NewCallExpr(func, std::move(params));
+}
+
 ast::Stmt *CodeGen::ExecCall(ast::Identifier fn_name) {
   ast::Expr *func = MakeExpr(fn_name);
   ast::Expr *state_arg = PointerTo(state_var_);

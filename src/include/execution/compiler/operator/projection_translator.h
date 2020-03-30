@@ -38,7 +38,14 @@ class ProjectionTranslator : public OperatorTranslator {
   void InitializeStructs(util::RegionVector<ast::Decl *> *decls) override {}
 
   // Does nothing
-  void InitializeHelperFunctions(util::RegionVector<ast::Decl *> *decls) override {}
+  void InitializeHelperFunctions(util::RegionVector<ast::Decl *> *decls) override {
+    // very inefficient
+    auto &columns = op_->GetOutputSchema()->GetColumns();
+    for(auto &col : columns){
+      auto translator = TranslatorFactory::CreateExpressionTranslator(col.GetExpr().Get(), codegen_);
+      translator->InitTopLevelDecls(decls);
+    }
+  }
 
   // Does nothing
   void InitializeSetup(util::RegionVector<ast::Stmt *> *setup_stmts) override {}

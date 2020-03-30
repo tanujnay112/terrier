@@ -78,7 +78,7 @@ std::unique_ptr<StmtAST> PLpgSQLParser::ParseFunction(const nlohmann::json &bloc
 
   PARSER_LOG_DEBUG("Parsing Declarations");
   TERRIER_ASSERT(decl_list.is_array(), "Declaration list is not an array");
-  for (uint32_t i = 0; i < decl_list.size(); i++) {
+  for (uint32_t i = 1; i < decl_list.size(); i++) {
     stmts.push_back(ParseDecl(decl_list[i]));
   }
 
@@ -165,6 +165,7 @@ std::unique_ptr<StmtAST> PLpgSQLParser::ParseDecl(const nlohmann::json &decl) {
       return std::unique_ptr<DeclStmtAST>(
           new DeclStmtAST(var_name, type::TypeId::VARCHAR));
     } else {
+//      TERRIER_ASSERT(false, "Unsupported ")
       udf_ast_context_->SetVariableType(var_name, type::TypeId::INVALID);
       return std::unique_ptr<DeclStmtAST>(
           new DeclStmtAST(var_name, type::TypeId::INVALID));

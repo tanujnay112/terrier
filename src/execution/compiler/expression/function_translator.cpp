@@ -33,7 +33,7 @@ ast::Expr *FunctionTranslator::DeriveExpr(ExpressionEvaluator *evaluator) {
   auto udf_ctx = codegen_->Accessor()->GetUDFContext(proc_oid);
 
   std::vector<ast::Expr *> params;
-  if (udf_ctx->IsExecCtxRequired()) {
+  if (udf_ctx->IsBuiltin() && udf_ctx->IsExecCtxRequired()) {
     params.push_back(codegen_->MakeExpr(codegen_->GetExecCtxVar()));
   }
   for (auto &param : params_) {
@@ -42,7 +42,7 @@ ast::Expr *FunctionTranslator::DeriveExpr(ExpressionEvaluator *evaluator) {
 
   if (!udf_context_->IsBuiltin()) {
 //    UNREACHABLE("We don't support non-builtin UDF's yet!");
-    codegen_->ExecCall(ast::Identifier(udf_context_->GetFunctionName().c_str()));
+    return codegen_->ExecCallExpr(ast::Identifier(udf_context_->GetFunctionName().c_str()));
   }
 
   return codegen_->BuiltinCall(udf_context_->GetBuiltin(), std::move(params));

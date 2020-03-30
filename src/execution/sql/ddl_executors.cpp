@@ -43,7 +43,7 @@ bool DDLExecutors::CreateFunctionExecutor(const common::ManagedPointer<planner::
                                            const common::ManagedPointer<exec::ExecutionContext> exec_ctx) {
   // Request permission from the Catalog to see if this a valid namespace name
   TERRIER_ASSERT(node->GetUDFLanguage() == parser::PLType::PL_PGSQL, "Unsupported language");
-  TERRIER_ASSERT(node->GetFunctionBody().size() == 1, "Unsupport function body?");
+  TERRIER_ASSERT(node->GetFunctionBody().size() >= 1, "Unsupported function body?");
 
   // I don't like how we have to separate the two here
   std::vector<type::TypeId > param_type_ids;
@@ -72,15 +72,21 @@ bool DDLExecutors::CreateFunctionExecutor(const common::ManagedPointer<planner::
 
   compiler::CodeGen codegen(exec_ctx.Get());
   util::RegionVector<ast::FieldDecl *> fn_params{codegen.Region()};
-  for(size_t i = 0;i < node->GetFunctionParameterNames().size();i++){
+  for(size_t i = 0;i < node->GetFunctionParameterNames().size();i++) {
     auto name = node->GetFunctionParameterNames()[i];
     auto type = parser::ReturnType::DataTypeToTypeId(node->GetFunctionParameterTypes()[i]);
-    fn_params.emplace_back(codegen.MakeField(ast::Identifier{name.c_str()}, codegen.TplType(type)));
+    auto name_alloc = reinterpret_cast<char*>(codegen.Region()->Allocate(name.length()+1));
+    std::memcpy(name_alloc, name.c_str(), name.length() + 1);
+    fn_params.emplace_back(codegen.MakeField(ast::Identifier{name_alloc}, codegen.TplType(type)));
   }
 
-  compiler::FunctionBuilder fb{&codegen, ast::Identifier{node->GetFunctionName().c_str()}, std::move(fn_params),
+  auto name = node->GetFunctionName();
+  char *name_alloc = reinterpret_cast<char*>(codegen.Region()->Allocate(name.length() + 1));
+  std::memcpy(name_alloc, name.c_str(), name.length() + 1);
+
+  compiler::FunctionBuilder fb{&codegen, ast::Identifier{name_alloc}, std::move(fn_params),
                                codegen.TplType(parser::ReturnType::DataTypeToTypeId(node->GetReturnType()))};
-  parser::udf::UDFCodegen udf_codegen{&fb, nullptr};
+  parser::udf::UDFCodegen udf_codegen{&fb, nullptr, &codegen};
   udf_codegen.GenerateUDF(ast->body.get());
   auto fn = fb.Finish();
 //  util::RegionVector<ast::Decl *> decls_reg_vec{decls->begin(), decls->end(), codegen.Region()};

@@ -149,6 +149,9 @@ class CodeGen {
    */
   util::RegionVector<ast::FieldDecl *> ExecParams();
 
+
+  ast::Expr *ExecCallExpr(ast::Identifier fn_name);
+
   /**
    * Calls one of functions called by main
    * @return the fn_name(state, execCtx) call.
