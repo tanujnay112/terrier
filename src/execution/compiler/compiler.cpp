@@ -75,9 +75,9 @@ ast::File *Compiler::Compile() {
   // Compile
   ast::File *compiled_file = codegen_->Compile(std::move(top_level));
   EXECUTION_LOG_DEBUG("Generated File");
-//  std::cerr << ast::AstDump::Dump(compiled_file) << "\n";
   sema::Sema type_checker{codegen_->Context()};
   type_checker.Run(compiled_file);
+  std::cerr << ast::AstDump::Dump(compiled_file) << "\n";
   return compiled_file;
 }
 

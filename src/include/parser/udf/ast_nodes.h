@@ -7,11 +7,10 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/raw_ostream.h"  // For errs()
-#include "parser/expression_util.h"
+#include "parser/expression_defs.h"
 #include "type/type_id.h"
 #include "type/transient_value.h"
 #include "ast_node_visitor.h"
-#include "execution/udf/udf_context.h"
 
 namespace terrier::parser::udf {
 
