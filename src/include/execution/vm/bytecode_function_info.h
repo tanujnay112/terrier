@@ -107,7 +107,7 @@ class LocalVar {
    * A local variable with a given addressing mode
    * @param offset The byte-offset of the local variable in the function's
    *               execution/stack frame
-   * @param address_mode The addressing mode for this variable
+     * @param address_mode The addressing mode for this variable
    */
   LocalVar(uint32_t offset, AddressMode address_mode)
       : bitfield_(AddressModeField::Encode(address_mode) | LocalOffsetField::Encode(offset)) {}

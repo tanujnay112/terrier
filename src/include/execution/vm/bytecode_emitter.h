@@ -58,12 +58,20 @@ class BytecodeEmitter {
   // -------------------------------------------------------
 
   /**
-   * Emit arbitrary assignment code
+   * Emit fixed length assignment code
    * @param bytecode assignment bytecode
    * @param dest destination variable
    * @param src source variable
    */
   void EmitAssign(Bytecode bytecode, LocalVar dest, LocalVar src);
+
+  /**
+   * Emit arbitrary assignment code
+   * @param dest where to move len bytes of src to
+   * @param src what to move
+   * @param len length of src object
+   */
+  void EmitAssignN(LocalVar dest, LocalVar src, uint32_t len);
 
   /**
    * Emit assignment code for 1 byte values.

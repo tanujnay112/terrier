@@ -2767,8 +2767,10 @@ void BytecodeGenerator::BuildAssign(LocalVar dest, LocalVar ptr, ast::Type *dest
     Emitter()->EmitAssign(Bytecode::Assign2, dest, ptr);
   } else if (size == 4) {
     Emitter()->EmitAssign(Bytecode::Assign4, dest, ptr);
-  } else {
+  } else if (size == 8) {
     Emitter()->EmitAssign(Bytecode::Assign8, dest, ptr);
+  } else {
+    Emitter()->EmitAssignN(dest, ptr, size);
   }
 }
 
