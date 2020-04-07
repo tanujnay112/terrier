@@ -17,7 +17,9 @@ class PLpgSQLParser {
  public:
   PLpgSQLParser(common::ManagedPointer<UDFASTContext> udf_ast_context)
     : udf_ast_context_(udf_ast_context) {}
-  std::unique_ptr<FunctionAST> ParsePLpgSQL(const std::string &func_body,
+  std::unique_ptr<FunctionAST> ParsePLpgSQL(std::vector<std::string> &&param_names,
+      std::vector<type::TypeId> &&param_types,
+      const std::string &func_body,
       common::ManagedPointer<UDFASTContext> ast_context);
 
  private:

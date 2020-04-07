@@ -27,23 +27,27 @@ void FunctionTranslator::InitTopLevelDecls(util::RegionVector<ast::Decl *> *decl
       return;
     }
 
+//    auto *node = GetExpressionAs<parser::FunctionExpression>();
+    auto &param_names = udf_context_->GetASTHead()->param_names_;
+    auto &param_types = udf_context_->GetASTHead()->param_types_;
     util::RegionVector<ast::FieldDecl *> fn_params{codegen_->Region()};
-//  for(size_t i = 0;i < udf_context_->GetFunctionArgsType().size();i++) {
-//    auto name = node->GetFunctionParameterNames()[i];
+  for(size_t i = 0;i < udf_context_->GetFunctionArgsType().size();i++) {
+      auto &param_name = param_names[i];
+      auto &param_type = param_types[i];
 //    auto type = parser::ReturnType::DataTypeToTypeId(node->GetFunctionParameterTypes()[i]);
 //    auto name_alloc = reinterpret_cast<char*>(codegen.Region()->Allocate(name.length()+1));
 //    std::memcpy(name_alloc, name.c_str(), name.length() + 1);
-//    fn_params.emplace_back(codegen.MakeField(ast::Identifier{name_alloc}, codegen.TplType(type)));
-//  }
+    fn_params.emplace_back(codegen_->MakeField(ast::Identifier{param_name.c_str()}, codegen_->TplType(param_type)));
+  }
 //
 //    auto name = udf_context_->GetFunctionName();
 //    char *name_alloc = reinterpret_cast<char*>(codegen_->Region()->Allocate(name.length() + 1));
 //    std::memcpy(name_alloc, name.c_str(), name.length() + 1);
-//
+
     compiler::FunctionBuilder fb{codegen_, ast::Identifier{udf_context_->GetFunctionName().c_str()}, std::move(fn_params),
                                  codegen_->TplType(udf_context_->GetFunctionReturnType())};
   parser::udf::UDFCodegen udf_codegen{&fb, nullptr, codegen_};
-  udf_codegen.GenerateUDF(udf_context_->GetASTHead()->body.get());
+  udf_codegen.GenerateUDF(udf_context_->GetASTHead().Get());
   auto fn = fb.Finish();
   decls->emplace_back(fn);
 ////  util::RegionVector<ast::Decl *> decls_reg_vec{decls->begin(), decls->end(), codegen.Region()};

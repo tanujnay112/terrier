@@ -16,6 +16,7 @@ class RetStmtAST;
 class AssignStmtAST;
 class SQLStmtAST;
 class DynamicSQLStmtAST;
+class FunctionAST;
 
 class ASTNodeVisitor {
  public:
@@ -24,6 +25,7 @@ class ASTNodeVisitor {
   virtual void Visit(AbstractAST *){};
   virtual void Visit(StmtAST *){};
   virtual void Visit(ExprAST *){};
+  virtual void Visit(FunctionAST *){};
   virtual void Visit(ValueExprAST *){};
   virtual void Visit(VariableExprAST *){};
   virtual void Visit(BinaryExprAST *){};

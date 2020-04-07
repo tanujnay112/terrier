@@ -68,7 +68,8 @@ bool DDLExecutors::CreateFunctionExecutor(const common::ManagedPointer<planner::
   // parser::udf::UDFContext udf_context;
   parser::udf::PLpgSQLParser udf_parser((common::ManagedPointer(&ast_context)));
   std::unique_ptr<parser::udf::FunctionAST> ast =
-      udf_parser.ParsePLpgSQL(body, (common::ManagedPointer(&ast_context)));
+      udf_parser.ParsePLpgSQL(node->GetFunctionParameterNames(), std::move(param_type_ids), body,
+          (common::ManagedPointer(&ast_context)));
 
 //  compiler::CodeGen codegen(exec_ctx.Get());
 //  util::RegionVector<ast::FieldDecl *> fn_params{codegen.Region()};

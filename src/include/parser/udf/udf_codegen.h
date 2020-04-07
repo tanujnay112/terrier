@@ -33,7 +33,7 @@ class UDFCodegen : ASTNodeVisitor {
 
   void GenerateUDF(AbstractAST *);
   void Visit(AbstractAST *) override;
-//  void Visit(FunctionAST *) override;
+  void Visit(FunctionAST *) override;
   void Visit(StmtAST *) override;
   void Visit(ExprAST *) override;
   void Visit(ValueExprAST *) override;

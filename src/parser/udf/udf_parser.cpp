@@ -38,8 +38,10 @@ const std::string kName = "name";
 const std::string kPLpgSQL_row = "PLpgSQL_row";
 const std::string kPLpgSQL_stmt_dynexecute = "PLpgSQL_stmt_dynexecute";
 
-std::unique_ptr<FunctionAST> PLpgSQLParser::ParsePLpgSQL(
-    const std::string &func_body, common::ManagedPointer<UDFASTContext> ast_context) {
+std::unique_ptr<FunctionAST> PLpgSQLParser::ParsePLpgSQL(std::vector<std::string> &&param_names,
+                                          std::vector<type::TypeId> &&param_types,
+                                          const std::string &func_body,
+                                          common::ManagedPointer<UDFASTContext> ast_context) {
   auto result = pg_query_parse_plpgsql(func_body.c_str());
   if (result.error) {
     PARSER_LOG_DEBUG("PL/pgSQL parse error : {}", result.error->message);
@@ -66,7 +68,7 @@ std::unique_ptr<FunctionAST> PLpgSQLParser::ParsePLpgSQL(
 
   const auto function = function_list[0][kPLpgSQL_function];
   std::unique_ptr<FunctionAST> function_ast(
-      new FunctionAST(ParseFunction(function)));
+      new FunctionAST(ParseFunction(function), std::move(param_names), std::move(param_types)));
   return function_ast;
 }
 

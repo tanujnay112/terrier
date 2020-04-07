@@ -30,8 +30,13 @@ void UDFCodegen::Visit(DeclStmtAST *ast) {
   fb_->Append(codegen_->DeclareVariable(ident, codegen_->TplType(ast->type), nullptr));
 }
 
-//void UDFCodegen::Visit(FunctionAST *) {
-//  }
+void UDFCodegen::Visit(FunctionAST *ast) {
+  for(size_t i = 0;i < ast->param_types_.size();i++){
+//    auto param_type = codegen_->TplType(ast->param_types_[i]);
+    str_to_ident_.emplace(ast->param_names_[i], codegen_->NewIdentifier("udf"));
+  }
+  ast->body.get()->Accept(this);
+}
 
 void UDFCodegen::Visit(VariableExprAST *ast) {
     auto it = str_to_ident_.find(ast->name);

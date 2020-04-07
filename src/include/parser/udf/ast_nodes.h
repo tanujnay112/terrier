@@ -192,11 +192,17 @@ class DynamicSQLStmtAST : public StmtAST {
 };
 
 // FunctionAST - This class represents a function definition itself.
-class FunctionAST {
+class FunctionAST : public AbstractAST {
  public:
   std::unique_ptr<StmtAST> body;
+  std::vector<std::string> param_names_;
+  std::vector<type::TypeId> param_types_;
 
-  FunctionAST(std::unique_ptr<StmtAST> body) : body(std::move(body)) {}
+  FunctionAST(std::unique_ptr<StmtAST> body, std::vector<std::string> &&param_names,
+      std::vector<type::TypeId > &&param_types)
+      : body(std::move(body)), param_names_(std::move(param_names)), param_types_(std::move(param_types)) {}
+
+  void Accept(ASTNodeVisitor *visitor) override { visitor->Visit(this); };
 
 };
 
