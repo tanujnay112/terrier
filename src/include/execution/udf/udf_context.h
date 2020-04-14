@@ -8,8 +8,13 @@
 #include "common/managed_pointer.h"
 #include "execution/ast/ast.h"
 #include "execution/ast/builtins.h"
+#include "execution/ast/context.h"
 #include "parser/udf/ast_nodes.h"
 #include "type/type_id.h"
+
+namespace terrier::execution::ast{
+  class Context;
+}
 
 namespace terrier::execution::udf {
 
@@ -25,13 +30,15 @@ class UDFContext {
    * @param args_type Vector of argument types
    */
   UDFContext(std::string func_name, type::TypeId func_ret_type, std::vector<type::TypeId> &&args_type,
-             std::unique_ptr<parser::udf::FunctionAST> &&head)
+             std::unique_ptr<util::Region> ast_region, std::unique_ptr<ast::Context> ast_context, ast::File *file)
       : func_name_(std::move(func_name)),
         func_ret_type_(func_ret_type),
         args_type_(std::move(args_type)),
         is_builtin_{false},
         is_exec_ctx_required_{false},
-        head_{std::move(head)}{}
+        ast_region_{std::move(ast_region)},
+        ast_context_{std::move(ast_context)},
+        file_{file} {}
   /**
    * Creates a UDFContext object for a builtin function
    * @param func_name Name of function
@@ -47,7 +54,9 @@ class UDFContext {
         args_type_(std::move(args_type)),
         is_builtin_{true},
         builtin_{builtin},
-        is_exec_ctx_required_{is_exec_ctx_required} {}
+        is_exec_ctx_required_{is_exec_ctx_required},
+        ast_region_{nullptr},
+        file_{ nullptr}{}
 //        ast_region_{nullptr} {}
   /**
    * @return The name of the function represented by this context object
@@ -85,33 +94,39 @@ class UDFContext {
     TERRIER_ASSERT(IsBuiltin(), "IsExecCtxRequired is only valid or a builtin function");
     return is_exec_ctx_required_;
   }
+//
+//  common::ManagedPointer<parser::udf::FunctionAST> GetASTHead() const {
+//    TERRIER_ASSERT(!IsBuiltin(), "Not a builtin function");
+//    return common::ManagedPointer(head_);
+//  }
 
-  common::ManagedPointer<parser::udf::FunctionAST> GetASTHead() const {
-    TERRIER_ASSERT(!IsBuiltin(), "Not a builtin function");
-    return common::ManagedPointer(head_);
+  /**
+   * @return returns the main functiondecl of this udf (to be used only if not builtin)
+   */
+  common::ManagedPointer<ast::FunctionDecl> GetMainFunctionDecl() const {
+    TERRIER_ASSERT(!IsBuiltin(), "Getting a non-builtin from a builtin function");
+    return common::ManagedPointer<ast::FunctionDecl>(
+        reinterpret_cast<ast::FunctionDecl*>(file_->Declarations().back()));
   }
 
-//  /**
-//   * @return returns the main functiondecl of this udf (to be used only if not builtin)
-//   */
-//  common::ManagedPointer<ast::FunctionDecl> GetMainFunctionDecl() const {
-//    TERRIER_ASSERT(!IsBuiltin(), "Getting a non-builtin from a builtin function");
-//    return common::ManagedPointer<ast::FunctionDecl>(
-//        reinterpret_cast<ast::FunctionDecl*>(file_->Declarations().back()));
-//  }
-//
-//  /**
-//   * @return returns the file with the functiondecl and supporting decls (to be used only if not builtin)
-//   */
-//  common::ManagedPointer<ast::File> GetFile() const {
-//    TERRIER_ASSERT(!IsBuiltin(), "Getting a non-builtin from a builtin function");
-//    return file_;
-//  }
-//
-//  /**
-//   * @return region used for allocation
-//   */
-//  util::Region *Region() { return ast_region_.get(); }
+  /**
+   * @return returns the file with the functiondecl and supporting decls (to be used only if not builtin)
+   */
+  ast::File *GetFile() const {
+    TERRIER_ASSERT(!IsBuiltin(), "Getting a non-builtin from a builtin function");
+    return file_;
+  }
+
+  /**
+   * @return region used for allocation
+   */
+  util::Region *Region() { return ast_region_.get(); }
+
+  ast::Context *GetContext() { return ast_context_.get(); }
+
+  void SetStorage(const char *storage){ storage_ = storage; }
+
+  const char *GetStorage(){return storage_;}
 
  private:
   std::string func_name_;
@@ -124,8 +139,11 @@ class UDFContext {
 
   // use only if is_builtin_ is false
 //  common::ManagedPointer<ast::File> file_;
-//  std::unique_ptr<util::Region> ast_region_;
-  std::unique_ptr<parser::udf::FunctionAST> head_;
+  std::unique_ptr<util::Region> ast_region_;
+  std::unique_ptr<ast::Context> ast_context_;
+//  std::unique_ptr<parser::udf::FunctionAST> head_;
+  ast::File *file_;
+  const char *storage_;
 };
 
 }  // namespace terrier::execution::udf

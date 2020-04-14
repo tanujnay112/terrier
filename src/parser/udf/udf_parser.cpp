@@ -191,7 +191,10 @@ std::unique_ptr<StmtAST> PLpgSQLParser::ParseIf(const nlohmann::json &branch) {
   auto cond_expr =
       ParseExprSQL(branch[kCond][kPLpgSQL_expr][kQuery].get<std::string>());
   auto then_stmt = ParseBlock(branch[kThenBody]);
-  auto else_stmt = ParseBlock(branch[kElseBody]);
+  std::unique_ptr<StmtAST> else_stmt = nullptr;
+  if(branch.find(kElseBody) != branch.end()){
+    else_stmt = ParseBlock(branch[kElseBody]);
+  }
   return std::unique_ptr<IfStmtAST>(new IfStmtAST(
       std::move(cond_expr), std::move(then_stmt), std::move(else_stmt)));
 }

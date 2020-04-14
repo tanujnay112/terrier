@@ -88,6 +88,7 @@ void UDFCodegen::Visit(AssignStmtAST *ast) {
 
 void UDFCodegen::Visit(BinaryExprAST *ast) {
     execution::parsing::Token::Type op_token;
+    bool compare = false;
     switch(ast->op){
       case terrier::parser::ExpressionType::OPERATOR_DIVIDE:
         op_token = execution::parsing::Token::Type::SLASH;
@@ -110,6 +111,22 @@ void UDFCodegen::Visit(BinaryExprAST *ast) {
       case terrier::parser::ExpressionType::CONJUNCTION_AND:
         op_token = execution::parsing::Token::Type::AND;
         break;
+      case terrier::parser::ExpressionType::COMPARE_GREATER_THAN:
+        compare = true;
+        op_token = execution::parsing::Token::Type::GREATER;
+        break;
+      case terrier::parser::ExpressionType::COMPARE_GREATER_THAN_OR_EQUAL_TO:
+        compare = true;
+        op_token = execution::parsing::Token::Type::GREATER_EQUAL;
+        break;
+      case terrier::parser::ExpressionType::COMPARE_LESS_THAN_OR_EQUAL_TO:
+        compare = true;
+        op_token = execution::parsing::Token::Type::LESS_EQUAL;
+        break;
+      case terrier::parser::ExpressionType::COMPARE_LESS_THAN:
+        compare = true;
+        op_token = execution::parsing::Token::Type::LESS;
+        break;
       default:
         // TODO(tanujnay112): figure out concatenation operation from expressions?
         UNREACHABLE("Unsupported expression");
@@ -119,7 +136,11 @@ void UDFCodegen::Visit(BinaryExprAST *ast) {
 
     ast->rhs->Accept(this);
     auto rhs_expr = dst_;
-    dst_ = codegen_->BinaryOp(op_token, lhs_expr, rhs_expr);
+    if(compare){
+      dst_ = codegen_->Compare(op_token, lhs_expr, rhs_expr);
+    }else {
+      dst_ = codegen_->BinaryOp(op_token, lhs_expr, rhs_expr);
+    }
 }
 
 void UDFCodegen::Visit(IfStmtAST *ast) {
@@ -129,10 +150,11 @@ void UDFCodegen::Visit(IfStmtAST *ast) {
   fb_->StartIfStmt(cond);
   ast->then_stmt->Accept(this);
   fb_->FinishBlockStmt();
-
-  fb_->StartIfStmt(codegen_->UnaryOp(execution::parsing::Token::Type::BANG, cond));
-  ast->else_stmt->Accept(this);
-  fb_->FinishBlockStmt();
+  if(ast->else_stmt != nullptr) {
+    fb_->StartIfStmt(codegen_->UnaryOp(execution::parsing::Token::Type::BANG, cond));
+    ast->else_stmt->Accept(this);
+    fb_->FinishBlockStmt();
+  }
 }
 
 void UDFCodegen::Visit(SeqStmtAST *ast) {

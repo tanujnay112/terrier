@@ -337,6 +337,8 @@ class AstNodeFactory {
     return new (region_) MapTypeRepr(pos, key_type, val_type);
   }
 
+  util::Region *Region() { return region_; }
+
  private:
   util::Region *region_;
 };

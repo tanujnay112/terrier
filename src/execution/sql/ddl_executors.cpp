@@ -5,12 +5,14 @@
 #include <vector>
 #include <parser/udf/ast_nodes.h>
 #include <parser/udf/udf_codegen.h>
+#include <loggers/execution_logger.h>
 
 #include "catalog/catalog_accessor.h"
 #include "common/macros.h"
 #include "execution/exec/execution_context.h"
 #include "execution/compiler/function_builder.h"
 #include "execution/compiler/codegen.h"
+#include "execution/sema/sema.h"
 #include "parser/expression/column_value_expression.h"
 #include "parser/udf/udf_ast_context.h"
 #include "parser/udf/udf_parser.h"
@@ -67,36 +69,49 @@ bool DDLExecutors::CreateFunctionExecutor(const common::ManagedPointer<planner::
   parser::udf::UDFASTContext ast_context;
   // parser::udf::UDFContext udf_context;
   parser::udf::PLpgSQLParser udf_parser((common::ManagedPointer(&ast_context)));
-  std::unique_ptr<parser::udf::FunctionAST> ast =
-      udf_parser.ParsePLpgSQL(node->GetFunctionParameterNames(), std::move(param_type_ids), body,
-          (common::ManagedPointer(&ast_context)));
+  std::unique_ptr<parser::udf::FunctionAST> ast;
+  try {
+    ast =
+        udf_parser.ParsePLpgSQL(node->GetFunctionParameterNames(), std::move(param_type_ids), body,
+                                (common::ManagedPointer(&ast_context)));
+  }catch(Exception &e){
+    return false;
+  }
 
-//  compiler::CodeGen codegen(exec_ctx.Get());
-//  util::RegionVector<ast::FieldDecl *> fn_params{codegen.Region()};
-//  for(size_t i = 0;i < node->GetFunctionParameterNames().size();i++) {
-//    auto name = node->GetFunctionParameterNames()[i];
-//    auto type = parser::ReturnType::DataTypeToTypeId(node->GetFunctionParameterTypes()[i]);
-//    auto name_alloc = reinterpret_cast<char*>(codegen.Region()->Allocate(name.length()+1));
-//    std::memcpy(name_alloc, name.c_str(), name.length() + 1);
-//    fn_params.emplace_back(codegen.MakeField(ast::Identifier{name_alloc}, codegen.TplType(type)));
-//  }
-//
-//  auto name = node->GetFunctionName();
-//  char *name_alloc = reinterpret_cast<char*>(codegen.Region()->Allocate(name.length() + 1));
-//  std::memcpy(name_alloc, name.c_str(), name.length() + 1);
-//
-//  compiler::FunctionBuilder fb{&codegen, ast::Identifier{name_alloc}, std::move(fn_params),
-//                               codegen.TplType(parser::ReturnType::DataTypeToTypeId(node->GetReturnType()))};
-//  parser::udf::UDFCodegen udf_codegen{&fb, nullptr, &codegen};
-//  udf_codegen.GenerateUDF(ast->body.get());
-//  auto fn = fb.Finish();
+  compiler::CodeGen codegen(exec_ctx.Get());
+  util::RegionVector<ast::FieldDecl *> fn_params{codegen.Region()};
+  for(size_t i = 0;i < node->GetFunctionParameterNames().size();i++) {
+    auto name = node->GetFunctionParameterNames()[i];
+    auto type = parser::ReturnType::DataTypeToTypeId(node->GetFunctionParameterTypes()[i]);
+    auto name_alloc = reinterpret_cast<char*>(codegen.Region()->Allocate(name.length()+1));
+    std::memcpy(name_alloc, name.c_str(), name.length() + 1);
+    fn_params.emplace_back(codegen.MakeField(ast::Identifier{name_alloc}, codegen.TplType(type)));
+  }
+
+  auto name = node->GetFunctionName();
+  char *name_alloc = reinterpret_cast<char*>(codegen.Region()->Allocate(name.length() + 1));
+  std::memcpy(name_alloc, name.c_str(), name.length() + 1);
+
+  compiler::FunctionBuilder fb{&codegen, ast::Identifier{name_alloc}, std::move(fn_params),
+                               codegen.TplType(parser::ReturnType::DataTypeToTypeId(node->GetReturnType()))};
+  parser::udf::UDFCodegen udf_codegen{&fb, nullptr, &codegen};
+  udf_codegen.GenerateUDF(ast->body.get());
+  auto fn = fb.Finish();
 ////  util::RegionVector<ast::Decl *> decls_reg_vec{decls->begin(), decls->end(), codegen.Region()};
-//  util::RegionVector<ast::Decl*> decls({fn}, codegen.Region());
-//  auto file = codegen.Compile(std::move(decls));
+  util::RegionVector<ast::Decl*> decls({fn}, codegen.Region());
+  auto file = codegen.Compile(std::move(decls));
+
+  {
+    sema::Sema type_check(codegen.Context());
+    type_check.GetErrorReporter()->Reset();
+    bool bad = type_check.Run(file);
+    EXECUTION_LOG_ERROR("Errors: \n {}", type_check.GetErrorReporter()->SerializeErrors());
+    TERRIER_ASSERT(!bad, "bad function");
+  }
 
   udf::UDFContext *udf_context = new udf::UDFContext(node->GetFunctionName(),
-      parser::ReturnType::DataTypeToTypeId(node->GetReturnType()), std::move(param_type_ids), std::move(ast));
-//      common::ManagedPointer<ast::File>(file), codegen.ReleaseRegion());
+      parser::ReturnType::DataTypeToTypeId(node->GetReturnType()), std::move(param_type_ids),
+      codegen.ReleaseRegion(), codegen.ReleaseContext(), file);
   if(!accessor->SetProcCtxPtr(proc_id, udf_context)){
     delete udf_context;
     return false;
