@@ -59,6 +59,8 @@ class FunctionBuilder {
    */
   ast::FunctionDecl *Finish();
 
+  const util::RegionVector<ast::FieldDecl *> &GetParams() { return fn_params_; }
+
  private:
   CodeGen *codegen_;
 

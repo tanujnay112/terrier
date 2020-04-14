@@ -28,7 +28,7 @@ class UDFCodegen : ASTNodeVisitor {
  public:
 
   UDFCodegen(FunctionBuilder *fb,
-             execution::udf::UDFContext *udf_context, CodeGen *codgen) : fb_{fb}, codegen_{codgen} {};
+             execution::udf::UDFContext *udf_context, CodeGen *codegen);
   ~UDFCodegen(){};
 
   void GenerateUDF(AbstractAST *);

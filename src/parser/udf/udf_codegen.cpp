@@ -2,6 +2,13 @@
 #include "parser/udf/ast_nodes.h"
 
 namespace terrier::parser::udf{
+
+UDFCodegen::UDFCodegen(FunctionBuilder *fb,
+    execution::udf::UDFContext *udf_context, CodeGen *codegen) : fb_{fb}, codegen_{codegen} {
+  for(auto *param : fb->GetParams()){
+    str_to_ident_.emplace(std::string(param->Name().Data()), param->Name());
+  }
+}
   void UDFCodegen::GenerateUDF(AbstractAST *ast) { ast->Accept(this); }
 
 void UDFCodegen::Visit(AbstractAST *ast) {

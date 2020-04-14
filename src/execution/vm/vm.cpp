@@ -2003,8 +2003,13 @@ const uint8_t *VM::ExecuteCall(const uint8_t *ip, VM::Frame *caller) {
   // Set up the arguments to the function
   for (uint32_t i = 0; i < num_params; i++) {
     const LocalInfo &param_info = func_info->Locals()[i];
-    const void *param = caller->LocalAt<void *>(READ_LOCAL_ID());
-    std::memcpy(raw_frame + param_info.Offset(), &param, param_info.Size());
+    if(param_info.Size() == 16){
+      sql::Integer *param_int = caller->LocalAt<sql::Integer*>(READ_LOCAL_ID());
+      std::memcpy(raw_frame + param_info.Offset(), param_int, param_info.Size());
+    }else {
+      const void *param = caller->LocalAt<void *>(READ_LOCAL_ID());
+      std::memcpy(raw_frame + param_info.Offset(), &param, param_info.Size());
+    }
   }
 
   EXECUTION_LOG_DEBUG("Executing function '{}'", func_info->Name());
