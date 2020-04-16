@@ -13,6 +13,7 @@ const std::string kDatums = "datums";
 const std::string kPLpgSQL_var = "PLpgSQL_var";
 const std::string kRefname = "refname";
 const std::string kDatatype = "datatype";
+const std::string kDefaultVal = "default_val";
 const std::string kPLpgSQL_type = "PLpgSQL_type";
 const std::string kTypname = "typname";
 const std::string kAction = "action";
@@ -115,9 +116,9 @@ std::unique_ptr<StmtAST> PLpgSQLParser::ParseBlock(const nlohmann::json &block) 
       stmts.push_back(ParseIf(stmt[kPLpgSQL_stmt_if]));
     } else if (stmt_names.key() == kPLpgSQL_stmt_assign) {
       // TODO[Siva]: Need to fix Assignment expression / statement
+      const std::string &var_name = udf_ast_context_->GetVariableAtIndex(stmt[kPLpgSQL_stmt_assign][kVarno].get<uint32_t >());
       std::unique_ptr<VariableExprAST> lhs(
-          new VariableExprAST(udf_ast_context_->GetVariableAtIndex(
-              stmt[kPLpgSQL_stmt_assign][kVarno].get<uint32_t >())));
+          new VariableExprAST(var_name));
       auto rhs = ParseExprSQL(
           stmt[kPLpgSQL_stmt_assign][kExpr][kPLpgSQL_expr][kQuery].get<std::string>());
       std::unique_ptr<AssignStmtAST> ass_expr_ast(
@@ -151,26 +152,36 @@ std::unique_ptr<StmtAST> PLpgSQLParser::ParseDecl(const nlohmann::json &decl) {
     udf_ast_context_->AddVariable(var_name);
     auto type =
         decl[kPLpgSQL_var][kDatatype][kPLpgSQL_type][kTypname].get<std::string>();
+    std::unique_ptr<ExprAST> initial = nullptr;
+    if(decl[kPLpgSQL_var].find(kDefaultVal) != decl[kPLpgSQL_var].end()) {
+      initial = ParseExprSQL(decl[kPLpgSQL_var][kDefaultVal][kPLpgSQL_expr][kQuery].get<std::string>());
+    }
+
 
     PARSER_LOG_INFO("Registering type {0}: {1}", var_name.c_str(), type.c_str());
 
-    if (type == "integer") {
+    type::TypeId temp_type;
+    if(udf_ast_context_->GetVariableType(var_name, &temp_type)){
+      return std::unique_ptr<DeclStmtAST>(new DeclStmtAST(var_name, temp_type, std::move(initial)));
+    }
+
+    if (type.find("integer") != std::string::npos) {
       udf_ast_context_->SetVariableType(var_name, type::TypeId::INTEGER);
       return std::unique_ptr<DeclStmtAST>(
-          new DeclStmtAST(var_name, type::TypeId::INTEGER));
+          new DeclStmtAST(var_name, type::TypeId::INTEGER, std::move(initial)));
     } else if (type == "double") {
       udf_ast_context_->SetVariableType(var_name, type::TypeId::DECIMAL);
       return std::unique_ptr<DeclStmtAST>(
-          new DeclStmtAST(var_name, type::TypeId::DECIMAL));
+          new DeclStmtAST(var_name, type::TypeId::DECIMAL, std::move(initial)));
     } else if (type == "varchar") {
       udf_ast_context_->SetVariableType(var_name, type::TypeId::VARCHAR);
       return std::unique_ptr<DeclStmtAST>(
-          new DeclStmtAST(var_name, type::TypeId::VARCHAR));
+          new DeclStmtAST(var_name, type::TypeId::VARCHAR, std::move(initial)));
     } else {
-//      TERRIER_ASSERT(false, "Unsupported ")
-      udf_ast_context_->SetVariableType(var_name, type::TypeId::INVALID);
-      return std::unique_ptr<DeclStmtAST>(
-          new DeclStmtAST(var_name, type::TypeId::INVALID));
+      TERRIER_ASSERT(false, "Unsupported ");
+//      udf_ast_context_->SetVariableType(var_name, type::TypeId::INVALID);
+//      return std::unique_ptr<DeclStmtAST>(
+//          new DeclStmtAST(var_name, type::TypeId::INVALID));
     }
   } else if (decl_names.key() == kPLpgSQL_row) {
     auto var_name = decl[kPLpgSQL_row][kRefname].get<std::string>();
@@ -178,7 +189,7 @@ std::unique_ptr<StmtAST> PLpgSQLParser::ParseDecl(const nlohmann::json &decl) {
     // TODO[Siva]: Support row types later
     udf_ast_context_->SetVariableType(var_name, type::TypeId::INVALID);
     return std::unique_ptr<DeclStmtAST>(
-        new DeclStmtAST(var_name, type::TypeId::INVALID));
+        new DeclStmtAST(var_name, type::TypeId::INVALID, nullptr));
 
   } else {
     // TODO[Siva]: need to handle other types like row, table etc;
@@ -268,8 +279,7 @@ std::unique_ptr<ExprAST> PLpgSQLParser::ParseExpr(
             ->GetColumnName()));
   } else if (parser::ExpressionUtil::IsOperatorExpression(
       expr->GetExpressionType()) ||
-      expr->GetExpressionType() == parser::ExpressionType::COMPARE_LESS_THAN ||
-      expr->GetExpressionType() == parser::ExpressionType::COMPARE_GREATER_THAN) {
+      (parser::ExpressionUtil::IsComparisonExpression(expr->GetExpressionType()))) {
     return std::unique_ptr<BinaryExprAST>(new BinaryExprAST(
         expr->GetExpressionType(), ParseExpr(expr->GetChild(0)),
         ParseExpr(expr->GetChild(1))));

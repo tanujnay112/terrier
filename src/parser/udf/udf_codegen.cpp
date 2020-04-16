@@ -4,7 +4,8 @@
 namespace terrier::parser::udf{
 
 UDFCodegen::UDFCodegen(FunctionBuilder *fb,
-    execution::udf::UDFContext *udf_context, CodeGen *codegen) : fb_{fb}, codegen_{codegen} {
+    parser::udf::UDFASTContext *udf_ast_context, CodeGen *codegen) : fb_{fb}, udf_ast_context_{udf_ast_context},
+    codegen_{codegen} {
   for(auto *param : fb->GetParams()){
     str_to_ident_.emplace(std::string(param->Name().Data()), param->Name());
   }
@@ -34,7 +35,11 @@ void UDFCodegen::Visit(ExprAST *ast) {
 void UDFCodegen::Visit(DeclStmtAST *ast) {
     execution::ast::Identifier ident = codegen_->NewIdentifier("udf");
     str_to_ident_.emplace(ast->name, ident);
-  fb_->Append(codegen_->DeclareVariable(ident, codegen_->TplType(ast->type), nullptr));
+    if(ast->initial != nullptr) {
+//      Visit(ast->initial.get());
+      ast->initial->Accept(this);
+    }
+  fb_->Append(codegen_->DeclareVariable(ident, codegen_->TplType(ast->type), dst_));
 }
 
 void UDFCodegen::Visit(FunctionAST *ast) {
@@ -60,7 +65,10 @@ void UDFCodegen::Visit(AssignStmtAST *ast) {
   reinterpret_cast<AbstractAST*>(ast->rhs.get())->Accept(this);
   auto rhs_expr = dst_;
 
-  auto left_type = udf_ast_context_->GetVariableType(ast->lhs->name);
+  type::TypeId left_type;
+  udf_ast_context_->GetVariableType(ast->lhs->name, &left_type);
+
+
   auto it = str_to_ident_.find(ast->lhs->name);
   TERRIER_ASSERT(it != str_to_ident_.end(), "Variable not found");
   auto left_codegen_ident = it->second;
@@ -173,6 +181,8 @@ void UDFCodegen::Visit(SeqStmtAST *ast) {
 void UDFCodegen::Visit(WhileStmtAST *ast) {
   ast->cond_expr->Accept(this);
   auto cond = dst_;
+//  cond = codegen_->Compare(execution::parsing::Token::Type::EQUAL_EQUAL, cond, )
+  cond = codegen_->OneArgCall(execution::ast::Builtin::SqlToBool, cond);
   fb_->StartForStmt(nullptr, cond, nullptr);
   ast->body_stmt->Accept(this);
   fb_->FinishBlockStmt();

@@ -12,17 +12,23 @@ class UDFASTContext {
     symbol_table_[var] = type;
   }
 
-  type::TypeId GetVariableType(const std::string &var) {
+  bool GetVariableType(const std::string &var, type::TypeId *type) {
     auto it = symbol_table_.find(var);
     if(it == symbol_table_.end()){
-      throw PARSER_EXCEPTION("Undeclared variable");
+      return false;
     }
-    return it->second;
+    if(type != nullptr){
+      *type = it->second;
+    }
+    return true;
   }
 
   void AddVariable(std::string name) { local_variables_.push_back(name); }
 
-  std::string &GetVariableAtIndex(int index) { return local_variables_[index]; }
+  const std::string &GetVariableAtIndex(int index) {
+    TERRIER_ASSERT(local_variables_.size() >= index, "Bad var");
+    return local_variables_[index-1];
+  }
 
  private:
   std::unordered_map<std::string, type::TypeId> symbol_table_;

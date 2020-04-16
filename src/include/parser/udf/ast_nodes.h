@@ -108,9 +108,10 @@ class DeclStmtAST : public StmtAST {
  public:
   std::string name;
   type::TypeId type;
+  std::unique_ptr<ExprAST> initial;
 
-  DeclStmtAST(std::string name, type::TypeId type)
-      : name(std::move(name)), type(std::move(type)) {}
+  DeclStmtAST(std::string name, type::TypeId type, std::unique_ptr<ExprAST> initial)
+      : name(std::move(name)), type(std::move(type)), initial(std::move(initial)) {}
 
   void Accept(ASTNodeVisitor *visitor) override { visitor->Visit(this); };
 };

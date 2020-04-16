@@ -93,7 +93,7 @@ AstNode *AstCloneImpl::VisitFunctionDecl(FunctionDecl *node) {
 
 AstNode *AstCloneImpl::VisitVariableDecl(VariableDecl *node) {
   return factory_->NewVariableDecl(node->Position(), CloneIdentifier(node->Name()),
-      reinterpret_cast<Expr*>(node->TypeRepr()), node->Initial());
+      reinterpret_cast<Expr*>(Visit(node->TypeRepr())), reinterpret_cast<Expr*>(Visit(node->Initial())));
 }
 
 AstNode *AstCloneImpl::VisitStructDecl(StructDecl *node) {
@@ -116,7 +116,7 @@ AstNode *AstCloneImpl::VisitBlockStmt(BlockStmt *node) {
 }
 
 AstNode *AstCloneImpl::VisitDeclStmt(DeclStmt *node) {
-  return factory_->NewDeclStmt(reinterpret_cast<Decl*>(VisitDecl(node->Declaration())));
+  return factory_->NewDeclStmt(reinterpret_cast<Decl*>(Visit(node->Declaration())));
 }
 
 AstNode *AstCloneImpl::VisitExpressionStmt(ExpressionStmt *node) {
@@ -124,9 +124,11 @@ AstNode *AstCloneImpl::VisitExpressionStmt(ExpressionStmt *node) {
 }
 
 AstNode *AstCloneImpl::VisitForStmt(ForStmt *node) {
+  auto init = node->Init() == nullptr ? nullptr : reinterpret_cast<Stmt*>(Visit(node->Init()));
+  auto next = node->Next() == nullptr ? nullptr : reinterpret_cast<Stmt*>(Visit(node->Next()));
   return factory_->NewForStmt(node->Position(),
-      reinterpret_cast<Stmt*>(VisitStmt(node->Init())), reinterpret_cast<Expr*>(Visit(node->Condition())),
-                              reinterpret_cast<Stmt*>(Visit(node->Next())),
+      init, reinterpret_cast<Expr*>(Visit(node->Condition())),
+                              next,
                               reinterpret_cast<BlockStmt*>(VisitBlockStmt(node->Body())));
 }
 

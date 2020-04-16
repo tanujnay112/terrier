@@ -7,5 +7,5 @@ fun sample() -> Integer {
 
 fun main() -> int32 {
   var s = sample()
-  return s.
+  return s.val
 }

@@ -741,7 +741,8 @@ inline bool Type::IsSpecificBuiltin(uint16_t kind) const {
 
 inline bool Type::IsNilType() const { return IsSpecificBuiltin(BuiltinType::Nil); }
 
-inline bool Type::IsBoolType() const { return IsSpecificBuiltin(BuiltinType::Bool); }
+inline bool Type::IsBoolType() const { return IsSpecificBuiltin(BuiltinType::Bool)
+|| IsSpecificBuiltin(BuiltinType::Boolean); }
 
 inline bool Type::IsIntegerType() const {
   if (auto *builtin_type = SafeAs<BuiltinType>()) {

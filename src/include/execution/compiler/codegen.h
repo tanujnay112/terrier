@@ -312,6 +312,8 @@ class CodeGen {
    */
   ast::Expr *IntToSql(int64_t num);
 
+  ast::Expr *BoolToSql(bool val);
+
   /**
    * @param num The number to convert to a sql Real.
    * @return The generated sql Real.

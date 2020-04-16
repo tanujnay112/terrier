@@ -114,6 +114,24 @@ class ExpressionUtil {
     }
   }
 
+  static bool IsComparisonExpression(ExpressionType type) {
+    switch (type) {
+      case ExpressionType::COMPARE_GREATER_THAN_OR_EQUAL_TO:
+      case ExpressionType::COMPARE_GREATER_THAN:
+      case ExpressionType::COMPARE_LESS_THAN_OR_EQUAL_TO:
+      case ExpressionType::COMPARE_LESS_THAN:
+      case ExpressionType::COMPARE_IN:
+      case ExpressionType::COMPARE_EQUAL:
+      case ExpressionType::COMPARE_IS_DISTINCT_FROM:
+      case ExpressionType::COMPARE_LIKE:
+      case ExpressionType::COMPARE_NOT_EQUAL:
+      case ExpressionType::COMPARE_NOT_LIKE:
+        return true;
+      default:
+        return false;
+    }
+  }
+
   /**
    * For a given comparison operator, reverses the comparison.
    * This function flips ExpressionType such that flipping the left and right

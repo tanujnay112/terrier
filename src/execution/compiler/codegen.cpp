@@ -580,6 +580,11 @@ ast::Expr *CodeGen::IntToSql(int64_t num) {
   return OneArgCall(ast::Builtin::IntToSql, int_lit);
 }
 
+ast::Expr *CodeGen::BoolToSql(bool val) {
+  ast::Expr *val_lit = BoolLiteral(val);
+  return OneArgCall(ast::Builtin::BoolToSql, val_lit);
+}
+
 ast::Expr *CodeGen::FloatToSql(double num) {
   ast::Expr *float_lit = FloatLiteral(num);
   return OneArgCall(ast::Builtin::FloatToSql, float_lit);

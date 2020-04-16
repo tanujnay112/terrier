@@ -94,7 +94,7 @@ bool DDLExecutors::CreateFunctionExecutor(const common::ManagedPointer<planner::
 
   compiler::FunctionBuilder fb{&codegen, ast::Identifier{name_alloc}, std::move(fn_params),
                                codegen.TplType(parser::ReturnType::DataTypeToTypeId(node->GetReturnType()))};
-  parser::udf::UDFCodegen udf_codegen{&fb, nullptr, &codegen};
+  parser::udf::UDFCodegen udf_codegen{&fb, &ast_context, &codegen};
   udf_codegen.GenerateUDF(ast->body.get());
   auto fn = fb.Finish();
 ////  util::RegionVector<ast::Decl *> decls_reg_vec{decls->begin(), decls->end(), codegen.Region()};
