@@ -80,12 +80,21 @@ bool DDLExecutors::CreateFunctionExecutor(const common::ManagedPointer<planner::
 
   compiler::CodeGen codegen(exec_ctx.Get());
   util::RegionVector<ast::FieldDecl *> fn_params{codegen.Region()};
+//  auto ret_name = parser::udf::UDFCodegen::GetReturnParamString();
+//  auto ret_type = parser::ReturnType::DataTypeToTypeId(node->GetReturnType());
+//  fn_params.emplace_back(codegen.MakeField(ast::Identifier{ret_name},
+//      codegen.PointerType(codegen.TplType(ret_type))));
+
   for(size_t i = 0;i < node->GetFunctionParameterNames().size();i++) {
     auto name = node->GetFunctionParameterNames()[i];
     auto type = parser::ReturnType::DataTypeToTypeId(node->GetFunctionParameterTypes()[i]);
     auto name_alloc = reinterpret_cast<char*>(codegen.Region()->Allocate(name.length()+1));
     std::memcpy(name_alloc, name.c_str(), name.length() + 1);
-    fn_params.emplace_back(codegen.MakeField(ast::Identifier{name_alloc}, codegen.TplType(type)));
+    fn_params.emplace_back(codegen.MakeField(ast::Identifier{name_alloc},
+//        codegen.PointerType(
+            codegen.TplType(type)
+//            )
+            ));
   }
 
   auto name = node->GetFunctionName();
@@ -93,7 +102,11 @@ bool DDLExecutors::CreateFunctionExecutor(const common::ManagedPointer<planner::
   std::memcpy(name_alloc, name.c_str(), name.length() + 1);
 
   compiler::FunctionBuilder fb{&codegen, ast::Identifier{name_alloc}, std::move(fn_params),
-                               codegen.TplType(parser::ReturnType::DataTypeToTypeId(node->GetReturnType()))};
+//                               codegen.PointerType(
+                                   codegen.TplType(
+                                   parser::ReturnType::DataTypeToTypeId(node->GetReturnType()))
+//                                   )
+  };
   parser::udf::UDFCodegen udf_codegen{&fb, &ast_context, &codegen};
   udf_codegen.GenerateUDF(ast->body.get());
   auto fn = fb.Finish();

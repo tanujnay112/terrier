@@ -490,6 +490,9 @@ void BytecodeGenerator::VisitSqlConversionCall(ast::CallExpr *call, ast::Builtin
       auto dest = ExecutionResult()->GetOrCreateDestination(ast::BuiltinType::Get(ctx, ast::BuiltinType::Integer));
       auto input = VisitExpressionForRValue(call->Arguments()[0]);
       Emitter()->Emit(Bytecode::InitInteger, dest, input);
+      if(ExecutionResult()->IsRValue()){
+        ExecutionResult()->SetDestination(dest.ValueOf());
+      }
       break;
     }
     case ast::Builtin::FloatToSql: {
@@ -726,12 +729,18 @@ void BytecodeGenerator::VisitBuiltinPCICall(ast::CallExpr *call, ast::Builtin bu
       LocalVar val = ExecutionResult()->GetOrCreateDestination(ast::BuiltinType::Get(ctx, ast::BuiltinType::Integer));
       auto col_idx = static_cast<uint16_t>(call->Arguments()[1]->As<ast::LitExpr>()->Int64Val());
       Emitter()->EmitPCIGet(Bytecode::PCIGetInteger, val, pci, col_idx);
+      if(ExecutionResult()->IsRValue()){
+        ExecutionResult()->SetDestination(val.ValueOf());
+      }
       break;
     }
     case ast::Builtin::PCIGetIntNull: {
       LocalVar val = ExecutionResult()->GetOrCreateDestination(ast::BuiltinType::Get(ctx, ast::BuiltinType::Integer));
       auto col_idx = static_cast<uint16_t>(call->Arguments()[1]->As<ast::LitExpr>()->Int64Val());
       Emitter()->EmitPCIGet(Bytecode::PCIGetIntegerNull, val, pci, col_idx);
+      if(ExecutionResult()->IsRValue()){
+        ExecutionResult()->SetDestination(val.ValueOf());
+      }
       break;
     }
     case ast::Builtin::PCIGetBigInt: {
@@ -2538,6 +2547,9 @@ void BytecodeGenerator::VisitPrimitiveArithmeticExpr(ast::BinaryOpExpr *node) {
 }
 
 void BytecodeGenerator::VisitSqlArithmeticExpr(ast::BinaryOpExpr *node) {
+  if(node->Op() == parsing::Token::Type::PLUS){
+    std::cout << "lol\n";
+  }
   LocalVar dest = ExecutionResult()->GetOrCreateDestination(node->GetType());
   LocalVar left = VisitExpressionForLValue(node->Left());
   LocalVar right = VisitExpressionForLValue(node->Right());
@@ -2572,10 +2584,13 @@ void BytecodeGenerator::VisitSqlArithmeticExpr(ast::BinaryOpExpr *node) {
   }
 
   // Emit
-  Emitter()->EmitBinaryOp(bytecode, dest, left, right);
+  Emitter()->EmitBinaryOp(bytecode, dest, left.AddressOf(), right.AddressOf());
 
   // Mark where the result is
   ExecutionResult()->SetDestination(dest);
+  if(ExecutionResult()->IsRValue()){
+    ExecutionResult()->SetDestination(dest.ValueOf());
+  }
 }
 
 void BytecodeGenerator::VisitArithmeticExpr(ast::BinaryOpExpr *node) {

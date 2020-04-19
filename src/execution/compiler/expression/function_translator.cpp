@@ -82,6 +82,15 @@ ast::Expr *FunctionTranslator::DeriveExpr(ExpressionEvaluator *evaluator) {
 //    UNREACHABLE("We don't support non-builtin UDF's yet!");
     auto ident_expr = codegen_->Factory()->NewIdentifierExpr(DUMMY_POS, ast::Identifier(udf_context_->GetStorage()));
     util::RegionVector<ast::Expr *> args{{}, codegen_->Region()};
+//    TERRIER_ASSERT(evaluator->fb_ != nullptr, "function builder not available");
+//    auto ret_ident = codegen_->NewIdentifier("ret");
+//    evaluator->fb_->Append(codegen_->DeclareVariable(ret_ident, codegen_->TplType(udf_context_->GetFunctionReturnType()),
+//                                                     nullptr));
+//    args.emplace_back(
+////        codegen_->PointerTo(
+//        codegen_->MakeExpr(ret_ident)
+////        )
+//        );
     for (auto &expr : params) {
       args.emplace_back(expr);
     }

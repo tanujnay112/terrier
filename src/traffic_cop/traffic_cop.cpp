@@ -366,7 +366,7 @@ void TrafficCop::CodegenAndRunPhysicalPlan(const common::ManagedPointer<network:
   if (query_type == network::QueryType::QUERY_SELECT)
     out->WriteRowDescription(physical_plan->GetOutputSchema()->GetColumns());
 
-  exec_query.Run(common::ManagedPointer(exec_ctx), execution::vm::ExecutionMode::Interpret);
+  exec_query.Run(common::ManagedPointer(exec_ctx), execution::vm::ExecutionMode::Compiled);
 
   if (connection_ctx->TransactionState() == network::NetworkTransactionStateType::BLOCK) {
     // Execution didn't set us to FAIL state, go ahead and write command complete

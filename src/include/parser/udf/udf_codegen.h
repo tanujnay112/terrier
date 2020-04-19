@@ -49,6 +49,8 @@ class UDFCodegen : ASTNodeVisitor {
   void Visit(SQLStmtAST *) override;
   void Visit(DynamicSQLStmtAST *) override;
 
+  static const char *GetReturnParamString();
+
  private:
   FunctionBuilder *fb_;
   UDFASTContext *udf_ast_context_;

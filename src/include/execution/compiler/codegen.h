@@ -39,7 +39,7 @@ class CodeGen {
    * TODO(Amadou): This implicitly ties this object to a transaction. May not be what we want.
    * @param exec_ctx The execution context
    */
-  explicit CodeGen(exec::ExecutionContext *exec_ctx);
+  explicit CodeGen(exec::ExecutionContext *exec_ctx, std::string global_prefix = "");
 
   /**
    * Prevent copy and move
@@ -617,6 +617,8 @@ class CodeGen {
    * Signature: (state: *State, execCtx: *ExecutionContext) -> nil
    */
   ast::Identifier teardown_fn_;
+
+  std::string global_prefix_;
 
 //  std::unordered_set<std::unique_ptr<ExpressionTranslator>> cached_expr_translators_;
 };

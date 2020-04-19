@@ -11,19 +11,20 @@
 
 namespace terrier::execution::compiler {
 
-CodeGen::CodeGen(exec::ExecutionContext *exec_ctx)
+CodeGen::CodeGen(exec::ExecutionContext *exec_ctx, std::string global_prefix)
     : region_(std::make_unique<util::Region>("QueryRegion")),
       error_reporter_(region_.get()),
       ast_ctx_(std::make_unique<ast::Context>(region_.get(), &error_reporter_)),
       factory_(region_.get()),
       exec_ctx_(exec_ctx),
       pipeline_operating_units_(std::make_unique<brain::PipelineOperatingUnits>()),
-      state_struct_{Context()->GetIdentifier("State")},
-      state_var_{Context()->GetIdentifier("state")},
-      exec_ctx_var_(Context()->GetIdentifier("execCtx")),
-      main_fn_(Context()->GetIdentifier("main")),
-      setup_fn_(Context()->GetIdentifier("setupFn")),
-      teardown_fn_(Context()->GetIdentifier("teardownFn")) {}
+      state_struct_{Context()->GetIdentifier(global_prefix  + "State")},
+      state_var_{Context()->GetIdentifier(global_prefix  + "state")},
+      exec_ctx_var_(Context()->GetIdentifier(global_prefix  + "execCtx")),
+      main_fn_(Context()->GetIdentifier(global_prefix  + "main")),
+      setup_fn_(Context()->GetIdentifier(global_prefix  + "setupFn")),
+      teardown_fn_(Context()->GetIdentifier(global_prefix  + "teardownFn")),
+      global_prefix_(std::move(global_prefix)){}
 
 ast::BlockStmt *CodeGen::EmptyBlock() {
   util::RegionVector<ast::Stmt *> stmts(Region());

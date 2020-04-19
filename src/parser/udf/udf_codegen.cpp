@@ -10,6 +10,11 @@ UDFCodegen::UDFCodegen(FunctionBuilder *fb,
     str_to_ident_.emplace(std::string(param->Name().Data()), param->Name());
   }
 }
+
+const char *UDFCodegen::GetReturnParamString() {
+  return "return_val";
+}
+
   void UDFCodegen::GenerateUDF(AbstractAST *ast) { ast->Accept(this); }
 
 void UDFCodegen::Visit(AbstractAST *ast) {
@@ -190,6 +195,10 @@ void UDFCodegen::Visit(WhileStmtAST *ast) {
 
 void UDFCodegen::Visit(RetStmtAST *ast) {
   ast->expr->Accept(reinterpret_cast<ASTNodeVisitor*>(this));
+//  auto iter = str_to_ident_.find(std::string(GetReturnParamString()));
+//  TERRIER_ASSERT(iter != str_to_ident_.end(), "Return param not found");
+//  auto ret_expr = codegen_->MakeExpr(iter->second);
+//  fb_->Append(codegen_->Assign(ret_expr, dst_));
   auto ret_expr = dst_;
   fb_->Append(codegen_->ReturnStmt(ret_expr));
 }

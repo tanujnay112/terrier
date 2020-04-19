@@ -36,6 +36,7 @@ void SeqScanTranslator::InitializeHelperFunctions(util::RegionVector<ast::Decl *
 }
 
 void SeqScanTranslator::Produce(FunctionBuilder *builder) {
+  this->fb_ = builder;
   SetOids(builder);
   DeclareTVI(builder);
 
@@ -170,6 +171,7 @@ void SeqScanTranslator::GenScanCondition(FunctionBuilder *builder) {
   // Generate tuple at a time scan condition
   auto predicate = op_->GetScanPredicate();
   auto cond_translator = TranslatorFactory::CreateExpressionTranslator(predicate.Get(), codegen_);
+  this->fb_ = builder;
   ast::Expr *cond = cond_translator->DeriveExpr(this);
   builder->StartIfStmt(cond);
 }

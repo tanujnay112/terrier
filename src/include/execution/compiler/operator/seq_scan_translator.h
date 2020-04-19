@@ -130,6 +130,8 @@ class SeqScanTranslator : public OperatorTranslator {
   ast::Identifier pci_;
   ast::Identifier slot_;
   ast::Identifier pci_type_;
+
+  FunctionBuilder *fb_{nullptr};
 };
 
 }  // namespace terrier::execution::compiler

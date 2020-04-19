@@ -30,6 +30,8 @@ class ExpressionEvaluator {
   virtual ast::Expr *GetTableColumn(const catalog::col_oid_t &col_oid) {
     UNREACHABLE("This operator does not interact with tables");
   }
+
+  FunctionBuilder *fb_;
 };
 
 /**
