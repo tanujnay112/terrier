@@ -28,10 +28,12 @@
 #include "llvm/Transforms/IPO/AlwaysInliner.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/Scalar.h"
+#include "llvm/Transforms/Vectorize.h"
 
 #include "execution/ast/type.h"
 #include "execution/vm/bytecode_module.h"
 #include "execution/vm/bytecode_traits.h"
+#include "execution/vm/745SLPPass.h"
 #include "loggers/execution_logger.h"
 
 extern void *__dso_handle __attribute__((__visibility__("hidden")));  // NOLINT
@@ -876,6 +878,7 @@ void LLVMEngine::CompiledModuleBuilder::DefineFunction(const FunctionInfo &func_
       ir_builder->SetInsertPoint(blocks_iter->second);
     }
   }
+
 }
 
 void LLVMEngine::CompiledModuleBuilder::DefineFunctions() {
@@ -895,7 +898,6 @@ void LLVMEngine::CompiledModuleBuilder::Verify() {
   llvm::raw_string_ostream ostream(result);
   if (bool has_error = llvm::verifyModule(*Module(), &ostream); has_error) {
 //    std::cerr << DumpModuleIR() << "\n";
-//    llvm_module_->dump();
     EXECUTION_LOG_ERROR("ERROR IN MODULE:\n{}", ostream.str());
     UNREACHABLE("Could not compile module");
   }
@@ -933,7 +935,7 @@ void LLVMEngine::CompiledModuleBuilder::Optimize() {
   function_pm.add(llvm::createTargetTransformInfoWrapperPass(TargetMachine()->getTargetIRAnalysis()));
   function_pm.add(llvm::createCFGSimplificationPass());
   function_pm.add(llvm::createAggressiveDCEPass());
-  function_pm.add(llvm::createCFGSimplificationPass());
+//  function_pm.add(llvm::createSLPVectorizerPass());
 
   //
   // The module-level optimization passes ...
@@ -956,11 +958,22 @@ void LLVMEngine::CompiledModuleBuilder::Optimize() {
   }
   function_pm.doFinalization();
 
+
+//  llvm::legacy::FunctionPassManager function_pm2(Module());
+//  function_pm2.add(llvm::create745SLPPass());
+//  function_pm2.doInitialization();
+//  for (const auto &func_info : TplModule().Functions()) {
+//    auto *func = Module()->getFunction(func_info.Name());
+//    function_pm2.run(*func);
+//  }
+//  function_pm2.doFinalization();
+
   //
   // Now, run the module-level optimizations
   //
 
   module_pm.run(*Module());
+  llvm_module_->print(llvm::errs(), nullptr);
 }
 
 std::unique_ptr<LLVMEngine::CompiledModule> LLVMEngine::CompiledModuleBuilder::Finalize() {

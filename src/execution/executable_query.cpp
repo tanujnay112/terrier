@@ -1,5 +1,7 @@
 #include "execution/executable_query.h"
 
+#include "common/scoped_timer.h"
+
 #include "execution/ast/ast_dump.h"
 #include "execution/compiler/codegen.h"
 #include "execution/compiler/compiler.h"
@@ -99,8 +101,15 @@ void ExecutableQuery::Run(const common::ManagedPointer<exec::ExecutionContext> e
         "(*ExecutionContext)->int32");
     return;
   }
-  auto result = main(exec_ctx.Get());
+
+  uint64_t time;
+  int64_t result = 0;
+  {
+    common::ScopedTimer<std::chrono::nanoseconds> timer(&time);
+    result = main(exec_ctx.Get());
+  }
   EXECUTION_LOG_DEBUG("main() returned: {}", result);
+  std::cerr << "I TOOK " << time << "nS" << "\n";
   exec_ctx->SetPipelineOperatingUnits(nullptr);
 }
 

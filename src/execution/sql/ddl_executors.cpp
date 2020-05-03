@@ -117,7 +117,7 @@ bool DDLExecutors::CreateFunctionExecutor(const common::ManagedPointer<planner::
   {
     sema::Sema type_check(codegen.Context());
     type_check.GetErrorReporter()->Reset();
-    bool bad = type_check.Run(file);
+    type_check.Run(file);
     EXECUTION_LOG_ERROR("Errors: \n {}", type_check.GetErrorReporter()->SerializeErrors());
     TERRIER_ASSERT(!bad, "bad function");
   }
