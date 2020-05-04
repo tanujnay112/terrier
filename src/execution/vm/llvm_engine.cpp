@@ -539,8 +539,8 @@ LLVMEngine::CompiledModuleBuilder::CompiledModuleBuilder(const CompilerOptions &
 void LLVMEngine::CompiledModuleBuilder::DeclareFunctions() {
   for (const auto &func_info : tpl_module_.Functions()) {
     auto *func_type = llvm::cast<llvm::FunctionType>(GetTypeMap()->GetLLVMType(func_info.FuncType()));
-    func_type->print(llvm::errs(), true);
-    std::cerr << "\n";
+//    func_type->print(llvm::errs(), true);
+//    std::cerr << "\n";
     Module()->getOrInsertFunction(func_info.Name(), func_type);
   }
 }
@@ -668,9 +668,9 @@ void LLVMEngine::CompiledModuleBuilder::DefineFunction(const FunctionInfo &func_
   for (auto iter = TplModule().BytecodeForFunction(func_info); !iter.Done(); iter.Advance()) {
     Bytecode bytecode = iter.CurrentBytecode();
 
-    if(bytecode == Bytecode::AddInteger){
-      std::cerr << "lol\n";
-    }
+//    if(bytecode == Bytecode::AddInteger){
+//      std::cerr << "lol\n";
+//    }
 
     // Collect arguments
     llvm::SmallVector<llvm::Value *, 8> args;
@@ -758,10 +758,10 @@ void LLVMEngine::CompiledModuleBuilder::DefineFunction(const FunctionInfo &func_
             args[i] = ir_builder->CreateIntCast(args[i], expected_type, true);
           }
         } else if (expected_type->isPointerTy()) {
-          arg_iter->print(llvm::errs(), true);
-          std::cerr << "exp\n";
-          args[i]->print(llvm::errs(), true);
-          std::cerr << "actual\n";
+//          arg_iter->print(llvm::errs(), true);
+////          std::cerr << "exp\n";
+//          args[i]->print(llvm::errs(), true);
+//          std::cerr << "actual\n";
           TERRIER_ASSERT(provided_type->isPointerTy(), "Mismatched types");
           args[i] = ir_builder->CreateBitCast(args[i], expected_type);
         }
