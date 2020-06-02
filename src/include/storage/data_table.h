@@ -220,6 +220,11 @@ class DataTable {
    */
   const BlockLayout &GetBlockLayout() const { return accessor_.GetBlockLayout(); }
 
+  /**
+   * Clears the contents of this table and reinitializes it
+   */
+  void Reset();
+
  private:
   // The ArrowSerializer needs access to its blocks.
   friend class ArrowSerializer;

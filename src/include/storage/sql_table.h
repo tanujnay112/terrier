@@ -202,6 +202,11 @@ class SqlTable {
    */
   ProjectionMap ProjectionMapForOids(const std::vector<catalog::col_oid_t> &col_oids);
 
+  /**
+   * Clears the contents of this table and reinitializes it
+   */
+  void Reset();
+
  private:
   friend class RecoveryManager;  // Needs access to OID and ID mappings
   friend class terrier::RandomSqlTableTransaction;
