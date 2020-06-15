@@ -2139,6 +2139,7 @@ void BytecodeGenerator::VisitBuiltinCallExpr(ast::CallExpr *call) {
     case ast::Builtin::IterCteScanGetReadTable:
     case ast::Builtin::IterCteScanGetWriteTable:
     case ast::Builtin::IterCteScanGetReadTableOid:
+    case ast::Builtin::IterCteScanAccumulate:
     case ast::Builtin::IterCteScanGetInsertTempTablePR:
     case ast::Builtin::IterCteScanTableInsert:
     case ast::Builtin::IterCteScanFree: {
@@ -3017,8 +3018,8 @@ void BytecodeGenerator::VisitBuiltinCteScanCall(ast::CallExpr *call, ast::Builti
       auto *arr_type = call->Arguments()[2]->GetType()->As<ast::ArrayType>();
       LocalVar col_oids = VisitExpressionForLValue(call->Arguments()[2]);
       // Emit the initialization codes
-      Emitter()->CteScanIteratorInit(Bytecode::CteScanInit, iterator, exec_ctx, col_oids,
-                                     static_cast<uint32_t>(arr_type->Length()));
+      Emitter()->EmitCteScanIteratorInit(Bytecode::CteScanInit, iterator, exec_ctx, col_oids,
+                                         static_cast<uint32_t>(arr_type->Length()));
       break;
     }
     case ast::Builtin::CteScanGetInsertTempTablePR: {
@@ -3051,8 +3052,8 @@ void BytecodeGenerator::VisitBuiltinCteScanCall(ast::CallExpr *call, ast::Builti
       auto *arr_type = call->Arguments()[2]->GetType()->As<ast::ArrayType>();
       LocalVar col_oids = VisitExpressionForLValue(call->Arguments()[2]);
       // Emit the initialization codes
-      Emitter()->CteScanIteratorInit(Bytecode::IterCteScanInit, iterator, exec_ctx, col_oids,
-                                     static_cast<uint32_t>(arr_type->Length()));
+      Emitter()->EmitCteScanIteratorInit(Bytecode::IterCteScanInit, iterator, exec_ctx, col_oids,
+                                         static_cast<uint32_t>(arr_type->Length()));
       break;
     }
     case ast::Builtin::IterCteScanGetResult: {
@@ -3078,6 +3079,11 @@ void BytecodeGenerator::VisitBuiltinCteScanCall(ast::CallExpr *call, ast::Builti
     case ast::Builtin::IterCteScanGetInsertTempTablePR: {
       LocalVar pr = ExecutionResult()->GetOrCreateDestination(call->GetType());
       Emitter()->Emit(Bytecode::IterCteScanGetInsertTempTablePR, pr, iterator);
+      break;
+    }
+    case ast::Builtin::IterCteScanAccumulate: {
+      LocalVar accumulate_bool = ExecutionResult()->GetOrCreateDestination(call->GetType());
+      Emitter()->Emit(Bytecode::IterCteScanAccumulate, accumulate_bool, iterator);
       break;
     }
     case ast::Builtin::IterCteScanTableInsert: {
