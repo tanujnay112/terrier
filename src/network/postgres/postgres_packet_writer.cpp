@@ -75,10 +75,26 @@ void PostgresPacketWriter::WriteRowDescription(const std::vector<planner::Output
         columns[i].GetExpr()->GetAlias().empty() ? columns[i].GetName() : columns[i].GetExpr()->GetAlias();
     // If a column has no name, then Postgres will return "?column?" as a column name.
 
-    if (name.empty())
-      AppendStringView("?column?", true);
-    else
-      AppendString(name, true);
+    if(!name.empty() && (name[0] == '#')){
+      size_t j = 1;
+      for(j = 1;j < name.length();j++){
+        if(name[j] == '#'){
+          break;
+        }
+      }
+      j++;
+
+      if(j >= name.length()){
+        AppendStringView("?column?", true);
+      }else{
+        AppendString(name.substr(j), true);
+      }
+    }else {
+      if (name.empty())
+        AppendStringView("?column?", true);
+      else
+        AppendString(name, true);
+    }
     AppendValue<int32_t>(
         0)  // FIXME(Matt): We need this info in OutputSchema. Should be table oid (if it's a column from a table), 0
             // otherwise.

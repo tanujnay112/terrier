@@ -130,7 +130,8 @@ void BinderContext::AddCTETable(common::ManagedPointer<catalog::CatalogAccessor>
   std::vector<catalog::Schema::Column> schema_columns;
 //  std::unordered_map<std::string, type::TypeId> nested_column_mappings;
   for (size_t i = 0; i < col_aliases.size(); i++) {
-    catalog::Schema::Column col(col_aliases[i], select_list[i]->GetReturnValueType(), false,
+    catalog::Schema::Column col(col_aliases[i],
+                                select_list[i]->GetReturnValueType(), false,
                                 parser::ConstantValueExpression(select_list[i]->GetReturnValueType()),
                                 TEMP_OID(catalog::col_oid_t, i));
     schema_columns.push_back(col);

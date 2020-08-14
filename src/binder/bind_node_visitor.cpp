@@ -811,9 +811,15 @@ void BindNodeVisitor::Visit(common::ManagedPointer<parser::TableRef> node) {
       aliases.emplace_back(column_aliases[i]);
     }
     for(size_t i = num_aliases; i < num_columns;i++){
-      columns[i]->SetAlias("?column?");
-      aliases.emplace_back("?column?");
-      node->cte_col_aliases_.emplace_back("?column?");
+      std::string alias;
+      if(!columns[i]->GetAlias().empty()){
+        alias = "#" + std::to_string(i) + "#" + columns[i]->GetAlias();
+      }else{
+        alias = "#" + std::to_string(i) + "#";
+      }
+      columns[i]->SetAlias(alias);
+      aliases.emplace_back(alias);
+      node->cte_col_aliases_.emplace_back(alias);
     }
 
 //    TERRIER_ASSERT(num_aliases == num_columns, "Not enough aliases for all columns");

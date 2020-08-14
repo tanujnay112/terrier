@@ -2051,11 +2051,13 @@ std::vector<std::unique_ptr<TableRef>> PostgresParser::WithTransform(ParseResult
 
         std::vector<std::string> colnames;
         auto col_names_root = common_table_expr->aliascolnames_;
+        size_t i = 0;
         if (col_names_root != nullptr) {
           for (auto cell = col_names_root->head; cell != nullptr; cell = cell->next) {
             auto target = reinterpret_cast<Value *>(cell->data.ptr_value);
             auto column = target->val_.str_;
-            colnames.emplace_back(column);
+            colnames.emplace_back("#" + std::to_string(i) + "#" + column);
+            i++;
           }
         }
 //        if (colnames.empty()) {
