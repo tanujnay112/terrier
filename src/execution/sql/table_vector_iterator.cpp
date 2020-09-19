@@ -55,7 +55,7 @@ bool TableVectorIterator::Init(uint32_t block_start, uint32_t block_end) {
   // Create an owning vector.
   vector_projection_.SetStorageColIds(col_ids);
   vector_projection_.Initialize(col_types);
-  vector_projection_.Reset(common::Constants::K_DEFAULT_VECTOR_SIZE/1024);
+  vector_projection_.Reset(common::Constants::K_DEFAULT_VECTOR_SIZE);
 
   // All good.
   initialized_ = true;
