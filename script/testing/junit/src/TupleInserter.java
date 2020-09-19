@@ -83,7 +83,7 @@ public class TupleInserter {
         props.setProperty("prepareThreshold", "0");
         props.setProperty("preferQueryMode", "extended");
 //        props.setProperty("prepareThreshold", 0);
-            String url = String.format("jdbc:postgresql://localhost:15721/terrier");
+            String url = String.format("jdbc:postgresql://localhost:15410/terrier");
             Class.forName("org.postgresql.Driver");
         conn = DriverManager.getConnection(url, props);
             conn.setAutoCommit(true);
