@@ -43,7 +43,7 @@ public class TupleInserter {
     private static final String SQL_QUERY_2 = "SELECT x+1 FROM sample LIMIT %d;";
     private static final String SQL_QUERY_3 = "SELECT compTest02(x) FROM sample LIMIT %d;";
 
-    private static final int[] LIMITS = {0,1,10,100,1000,10000,100000};
+    private static final int[] LIMITS = {0,1,10,100,1000,10000,100000,1000000, 10000000, 100000000};
 
     /**
      * Initialize the database and table for testing
