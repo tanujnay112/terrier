@@ -42,7 +42,12 @@ void ExecutableQuery::Fragment::Run(byte query_state[], vm::ExecutionMode mode) 
       throw EXECUTION_EXCEPTION(fmt::format("Could not find function '{}' in query fragment.", func_name));
     }
     try {
-      func(query_state);
+      double elapsed_ms = 0;
+      {
+        util::ScopedTimer timer(&elapsed_ms);
+        func(query_state);
+      }
+      std::printf("Took %f ms to execute %s\n", elapsed_ms, func_name.data());
     } catch (const AbortException &e) {
       for (const auto &teardown_name : teardown_fn_) {
         if (!module_->GetFunction(teardown_name, mode, &func)) {

@@ -2,8 +2,11 @@
 
 fun main() -> int {
     var c = 0
-    for (var i = 0; i < 10; i = i + 1) {
-        c = c + i
+    for (;false;c=c+1) {
+        c = c + 1
+        if(c > 6) {
+            break
+        }
     }
     return c
 }

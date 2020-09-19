@@ -206,6 +206,7 @@ class BytecodeGenerator final : public ast::AstVisitor<BytecodeGenerator> {
   ExpressionResultScope *execution_result_{nullptr};
 
   LoopBuilder *current_loop_{nullptr};
+  LoopBuilder *last_loop_{nullptr};
 };
 
 }  // namespace terrier::execution::vm

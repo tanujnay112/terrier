@@ -178,7 +178,7 @@ class EXPORT Vector {
   /**
    * @return The maximum capacity of this vector.
    */
-  uint64_t GetCapacity() const noexcept { return common::Constants::K_DEFAULT_VECTOR_SIZE; }
+  uint64_t GetCapacity() const noexcept { return common::Constants::K_DEFAULT_VECTOR_SIZE/1024; }
 
   /**
    * @return The raw untyped data pointer.

@@ -152,9 +152,13 @@ ast::Decl *Parser::ParseVariableDecl() {
 
 ast::Stmt *Parser::ParseStmt() {
   // Statement = Block | ExpressionStmt | ForStmt | IfStmt | ReturnStmt |
-  //             SimpleStmt | VariableDecl ;
+  //             SimpleStmt | VariableDecl | BreakStmt ;
 
-  switch (Peek()) {
+  auto p = Peek();
+  switch (p) {
+    case Token::Type::BREAK: {
+      return ParseBreakStmt();
+    }
     case Token::Type::LEFT_BRACE: {
       return ParseBlockStmt();
     }
@@ -188,6 +192,12 @@ ast::Stmt *Parser::ParseSimpleStmt() {
   }
 
   return node_factory_->NewExpressionStmt(left);
+}
+
+ast::Stmt *Parser::ParseBreakStmt() {
+  Expect(Token::Type::BREAK);
+  const SourcePosition &position = scanner_->CurrentPosition();
+  return node_factory_->NewBreakStmt(position);
 }
 
 ast::Stmt *Parser::ParseBlockStmt() {

@@ -16,6 +16,7 @@ fun main(execCtx: *ExecutionContext) -> int {
      var cola = @vpiGetInt(vpi, 0)
      if (cola < 500) {
        ret = ret + 1
+       break
      }
    }
    @vpiReset(vpi)
