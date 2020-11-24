@@ -73,6 +73,8 @@ struct BaseFunctionParameter {
         return type::TypeId::BOOLEAN;
       case DataType::DATE:
         return type::TypeId::DATE;
+      default:
+        return type::TypeId::INVALID;
     }
   }
 

@@ -24,7 +24,7 @@ class UDFASTContext {
 
   void AddVariable(std::string name) { local_variables_.push_back(name); }
 
-  const std::string &GetVariableAtIndex(int index) {
+  const std::string &GetVariableAtIndex(size_t index) {
     NOISEPAGE_ASSERT(local_variables_.size() >= index, "Bad var");
     return local_variables_[index-1];
   }
