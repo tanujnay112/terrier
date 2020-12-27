@@ -20,6 +20,7 @@ class ValueExprAST;
 class VariableExprAST;
 class BinaryExprAST;
 class CallExprAST;
+class MemberExprAST;
 class SeqStmtAST;
 class DeclStmtAST;
 class IfStmtAST;
@@ -58,6 +59,7 @@ class UDFCodegen : ASTNodeVisitor {
   void Visit(SQLStmtAST *) override;
   void Visit(DynamicSQLStmtAST *) override;
   void Visit(ForStmtAST *) override;
+  void Visit(MemberExprAST *) override;
 
   execution::ast::File *Finish(){
     auto fn = fb_->Finish();

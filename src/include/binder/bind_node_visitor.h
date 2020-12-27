@@ -59,7 +59,7 @@ class BindNodeVisitor final : public SqlNodeVisitor {
                       common::ManagedPointer<std::vector<parser::ConstantValueExpression>> parameters,
                       common::ManagedPointer<std::vector<type::TypeId>> desired_parameter_types);
 
-  std::unordered_map<std::string, size_t> BindAndGetUDFParams(common::ManagedPointer<parser::ParseResult> parse_result,
+  std::unordered_map<std::string, std::pair<std::string, size_t>> BindAndGetUDFParams(common::ManagedPointer<parser::ParseResult> parse_result,
                                                               common::ManagedPointer<parser::udf::UDFASTContext> udf_ast_context);
 
   void Visit(common::ManagedPointer<parser::AnalyzeStatement> node) override;
@@ -107,7 +107,7 @@ class BindNodeVisitor final : public SqlNodeVisitor {
   std::vector<BinderContext> lateral_contexts_;
 
   common::ManagedPointer<parser::udf::UDFASTContext> udf_ast_context_ = nullptr;
-  std::unordered_map<std::string, size_t> udf_params_;
+  std::unordered_map<std::string, std::pair<std::string, size_t>> udf_params_;
   /** Catalog accessor */
   const common::ManagedPointer<catalog::CatalogAccessor> catalog_accessor_;
   const catalog::db_oid_t db_oid_;

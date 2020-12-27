@@ -69,14 +69,17 @@ class VariableExprAST : public ExprAST {
   VariableExprAST(const std::string &name) : name(name) {}
 
   void Accept(ASTNodeVisitor *visitor) override { visitor->Visit(this); };
+};
 
-//  peloton::codegen::Value GetAllocValue(UDFContext *udf_context) {
-//    return udf_context->GetAllocValue(name);
-//  }
-//
-//  type::TypeId GetVarType(UDFContext *udf_context) {
-//    return udf_context->GetVariableType(name);
-//  }
+// VariableExprAST - Expression class for referencing a variable, like "a".
+class MemberExprAST : public ExprAST {
+ public:
+  std::unique_ptr<VariableExprAST> object;
+  std::string field;
+
+  MemberExprAST(std::unique_ptr<VariableExprAST> &&object, std::string field) : object(std::move(object)), field(field) {}
+
+  void Accept(ASTNodeVisitor *visitor) override { visitor->Visit(this); };
 };
 
 // BinaryExprAST - Expression class for a binary operator.
@@ -199,9 +202,11 @@ class SQLStmtAST : public StmtAST {
  public:
   std::unique_ptr<parser::ParseResult> query;
   std::string var_name;
+  std::unordered_map<std::string, std::pair<std::string, size_t>> udf_params;
 
-  SQLStmtAST(std::unique_ptr<parser::ParseResult> query, std::string var_name)
-      : query(std::move(query)), var_name(std::move(var_name)) {}
+  SQLStmtAST(std::unique_ptr<parser::ParseResult> query, std::string var_name,
+             std::unordered_map<std::string, std::pair<std::string, size_t>> &&udf_params)
+      : query(std::move(query)), var_name(std::move(var_name)), udf_params(std::move(udf_params)) {}
 
   void Accept(ASTNodeVisitor *visitor) override { visitor->Visit(this); };
 };

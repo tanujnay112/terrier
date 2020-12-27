@@ -20,7 +20,7 @@ class PLpgSQLParser {
   PLpgSQLParser(common::ManagedPointer<UDFASTContext> udf_ast_context, const common::ManagedPointer<catalog::CatalogAccessor>
       accessor, catalog::db_oid_t db_oid)
     : udf_ast_context_(udf_ast_context)
-	//, accessor_(accessor), db_oid_(db_oid) 
+	, accessor_(accessor), db_oid_(db_oid)
 	{}
   std::unique_ptr<FunctionAST> ParsePLpgSQL(std::vector<std::string> &&param_names,
       std::vector<type::TypeId> &&param_types,
@@ -42,8 +42,8 @@ class PLpgSQLParser {
   std::unique_ptr<ExprAST> ParseExpr(common::ManagedPointer<parser::AbstractExpression>);
 
   common::ManagedPointer<UDFASTContext> udf_ast_context_;
-//  UNUSED_ATTRIBUTE const common::ManagedPointer<catalog::CatalogAccessor> accessor_;
-//  UNUSED_ATTRIBUTE catalog::db_oid_t db_oid_;
+  const common::ManagedPointer<catalog::CatalogAccessor> accessor_;
+  catalog::db_oid_t db_oid_;
 //  common::ManagedPointer<parser::PostgresParser> sql_parser_;
   std::unordered_map<std::string, type::TypeId> symbol_table_;
 };

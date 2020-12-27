@@ -29,9 +29,20 @@ class UDFASTContext {
     return local_variables_[index-1];
   }
 
+  void SetRecordType(std::string var, std::vector<std::pair<std::string, type::TypeId>> &&elems)
+  {
+    record_types_[var] = std::move(elems);
+  }
+
+  const std::vector<std::pair<std::string, type::TypeId>> &GetRecordType(const std::string &var)
+  {
+    return record_types_.find(var)->second;
+  }
+
  private:
   std::unordered_map<std::string, type::TypeId> symbol_table_;
   std::vector<std::string> local_variables_;
+  std::unordered_map<std::string, std::vector<std::pair<std::string, type::TypeId>>> record_types_;
 };
 
 }  // namespace noisepage::parser::udf

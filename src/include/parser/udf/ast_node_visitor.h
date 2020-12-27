@@ -9,6 +9,7 @@ class IsNullExprAST;
 class VariableExprAST;
 class BinaryExprAST;
 class CallExprAST;
+class MemberExprAST;
 class SeqStmtAST;
 class DeclStmtAST;
 class IfStmtAST;
@@ -33,6 +34,7 @@ class ASTNodeVisitor {
   virtual void Visit(BinaryExprAST *){};
   virtual void Visit(IsNullExprAST *){};
   virtual void Visit(CallExprAST *){};
+  virtual void Visit(MemberExprAST *){};
   virtual void Visit(SeqStmtAST *){};
   virtual void Visit(DeclStmtAST *){};
   virtual void Visit(IfStmtAST *){};

@@ -219,6 +219,22 @@ void Sema::VisitLambdaExpr(ast::LambdaExpr *node) {
                   ast::BuiltinType::Get(GetContext(), ident->GetType()->As<ast::BuiltinType>()->GetKind())
                       ->GetTplName())));
       fields.push_back(factory->NewFieldDecl(SourcePosition(), ident->Name(), type_repr));
+    }else{
+      util::RegionVector<ast::FieldDecl*> fields2(GetContext()->GetRegion());
+      for(auto field : ident->GetType()->SafeAs<ast::StructType>()->GetFieldsWithoutPadding()){
+        fields2.push_back(factory->NewFieldDecl(SourcePosition(), field.name_, factory->NewIdentifierExpr(
+            SourcePosition(),
+            GetContext()->GetIdentifier(
+                ast::BuiltinType::Get(GetContext(), field.type_->As<ast::BuiltinType>()->GetKind())
+                    ->GetTplName()))));
+      }
+
+      auto type_repr = factory->NewPointerType(
+          SourcePosition(),
+          factory->NewStructType(
+              SourcePosition(),
+             std::move(fields2)));
+      fields.push_back(factory->NewFieldDecl(SourcePosition(), ident->Name(), type_repr));
     }
   }
   fields.push_back(factory->NewFieldDecl(SourcePosition(), GetContext()->GetIdentifier("function"),

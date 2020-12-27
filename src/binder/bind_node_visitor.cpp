@@ -62,7 +62,7 @@ void BindNodeVisitor::BindNameToNode(
       common::ManagedPointer(this).CastManagedPointerTo<SqlNodeVisitor>());
 }
 
-std::unordered_map<std::string, size_t> BindNodeVisitor::BindAndGetUDFParams(common::ManagedPointer<parser::ParseResult> parse_result,
+std::unordered_map<std::string, std::pair<std::string, size_t>> BindNodeVisitor::BindAndGetUDFParams(common::ManagedPointer<parser::ParseResult> parse_result,
                                                             common::ManagedPointer<parser::udf::UDFASTContext> udf_ast_context)
 {
   NOISEPAGE_ASSERT(parse_result != nullptr, "We shouldn't be trying to bind something without a ParseResult.");
@@ -733,18 +733,17 @@ void BindNodeVisitor::Visit(common::ManagedPointer<parser::ColumnValueExpression
     std::transform(col_name.begin(), col_name.end(), col_name.begin(), ::tolower);
 
     // Table name not specified in the expression. Loop through all the table in the binder context.
+    type::TypeId type;
     if (table_name.empty()) {
-      type::TypeId type;
-      if(udf_ast_context_ != nullptr && udf_ast_context_->GetVariableType(expr->GetColumnName(), &type)) {
+      if (udf_ast_context_ != nullptr && udf_ast_context_->GetVariableType(expr->GetColumnName(), &type)) {
         expr->SetReturnValueType(type);
         auto idx = 0;
         if (udf_params_.count(expr->GetColumnName()) == 0) {
-          udf_params_[expr->GetColumnName()] = udf_params_.size();
+          udf_params_[expr->GetColumnName()] = std::make_pair("", udf_params_.size());
           idx = udf_params_.size() - 1;
         }
         expr->SetParamIdx(idx);
-      }else
-      if (context_ == nullptr || !context_->SetColumnPosTuple(expr)) {
+      } else if (context_ == nullptr || !context_->SetColumnPosTuple(expr)) {
         throw BINDER_EXCEPTION(fmt::format("column \"{}\" does not exist", col_name),
                                common::ErrorCode::ERRCODE_UNDEFINED_COLUMN);
       }
@@ -756,12 +755,28 @@ void BindNodeVisitor::Visit(common::ManagedPointer<parser::ColumnValueExpression
                                  common::ErrorCode::ERRCODE_UNDEFINED_COLUMN);
         }
         BinderContext::SetColumnPosTuple(col_name, tuple, expr);
-      } else if (context_ == nullptr || !context_->CheckNestedTableColumn(table_name, col_name, expr)) {
-        throw BINDER_EXCEPTION(fmt::format("Invalid table reference {}", expr->GetTableName()),
-                               common::ErrorCode::ERRCODE_UNDEFINED_TABLE);
+      } else if (context_ != nullptr && context_->CheckNestedTableColumn(table_name, col_name, expr)) {
+        return;
+
+      } else if (udf_ast_context_ != nullptr && udf_ast_context_->GetVariableType(expr->GetTableName(), &type)) {
+        // record type
+        NOISEPAGE_ASSERT(type == type::TypeId::INVALID, "unknown type");
+        auto &fields = udf_ast_context_->GetRecordType(expr->GetTableName());
+        auto it = std::find_if(fields.begin(), fields.end(), [=](auto p) { return p.first == expr->GetColumnName(); });
+        auto idx = 0;
+        if (it != fields.end()) {
+          if (udf_params_.count(expr->GetColumnName()) == 0) {
+            udf_params_[expr->GetColumnName()] = std::make_pair(expr->GetTableName(), udf_params_.size());
+            idx = udf_params_.size() - 1;
+          }
+          expr->SetReturnValueType(it->second);
+          expr->SetParamIdx(idx);
+        } else {
+          throw BINDER_EXCEPTION(fmt::format("Invalid table reference {}", expr->GetTableName()),
+                                 common::ErrorCode::ERRCODE_UNDEFINED_TABLE);
+        }
       }
     }
-
   }
 
   // The schema is authoritative on what the type of this ColumnValueExpression should be, UNLESS

@@ -100,7 +100,7 @@ fun main(exec_ctx: *ExecutionContext) -> int32 {
 
   var lineitem_l_partkey_l_orderkey_oid = @testCatalogIndexLookup(exec_ctx, "lineitem_l_partkey_l_orderkey")
   var orders_o_orderdate_o_orderkey_oid = @testCatalogIndexLookup(exec_ctx, "orders_o_orderdate_o_orderkey")
-  var l_pk_oid = 1019
+  var l_pk_oid = 1020
 
   @indCteScanInit(&cte_scan, exec_ctx, TEMP_OID_MASK, temp_col_oids, col_types, false)
   @tableIterInit(partkeys_tvi_2, exec_ctx, partkey_table_oid, partkeys_col_oids_2)
@@ -809,10 +809,10 @@ fun main(exec_ctx: *ExecutionContext) -> int32 {
     for (; @vpiHasNext(endvpi); @vpiAdvance(endvpi)) {
       var resres = @vpiGetIntNull(endvpi, 0)
       var recrec = @vpiGetBool(endvpi, 10)
-      //out = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
+      //out7 = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
       //        out.col1 = @intToSql(783)
-       // out = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
-       // out.col1 = resres
+       //var out7 = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
+       // out7.col1 = resres
     }
     @vpiReset(endvpi)
   }
