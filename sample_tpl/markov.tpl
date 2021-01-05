@@ -99,7 +99,7 @@ fun main(exec_ctx: *ExecutionContext) -> int32 {
   var o_orderdate_oid = @testCatalogLookup(exec_ctx, "orders", "o_orderdate")
 
   var lineitem_l_partkey_l_orderkey_oid = @testCatalogIndexLookup(exec_ctx, "lineitem_l_partkey_l_orderkey")
-  var orders_o_orderdate_o_orderkey_oid = @testCatalogIndexLookup(exec_ctx, "orders_o_orderdate_o_orderkey")
+  //var orders_o_orderdate_o_orderkey_oid = @testCatalogIndexLookup(exec_ctx, "orders_o_orderdate_o_orderkey")
   var l_pk_oid = 1020
 
   @indCteScanInit(&cte_scan, exec_ctx, TEMP_OID_MASK, temp_col_oids, col_types, false)

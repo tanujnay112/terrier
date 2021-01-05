@@ -367,6 +367,9 @@ void UDFCodegen::Visit(ForStmtAST *ast) {
 
   execution::util::RegionVector<execution::ast::Expr*> captures(codegen_->GetAstContext()->GetRegion());
   for(auto it : str_to_ident_){
+    if(it.first == "executionCtx"){
+      continue;
+    }
     captures.push_back(codegen_->MakeExpr(it.second));
   }
 
