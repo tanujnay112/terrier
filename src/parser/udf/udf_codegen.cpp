@@ -518,8 +518,6 @@ void UDFCodegen::Visit(SQLStmtAST *ast) {
     }
 //    auto capture_var = str_to_ident_.find(ast->var_name)->second;
     auto type = codegen_->TplType(execution::sql::GetTypeId(col.GetType()));
-    fb_->Append(codegen_->Assign(capture_var,
-                                 codegen_->ConstNull(col.GetType())));
 
     auto input_param = codegen_->MakeFreshIdentifier("input");
     params.push_back(codegen_->MakeField(input_param, type));
@@ -623,6 +621,16 @@ void UDFCodegen::Visit(SQLStmtAST *ast) {
   // etc etc
   fb_->Append(codegen_->Assign(codegen_->AccessStructMember(codegen_->MakeExpr(query_state), codegen_->MakeIdentifier("execCtx")),
                                exec_ctx));
+
+  for(auto &col : cols) {
+    execution::ast::Expr *capture_var = codegen_->MakeExpr(str_to_ident_.find(ast->var_name)->second);
+    auto lhs = capture_var;
+    if(cols.size() > 1){
+      // record struct type
+      lhs = codegen_->AccessStructMember(capture_var, codegen_->MakeIdentifier(col.GetName()));
+    }
+    fb_->Append(codegen_->Assign(lhs, codegen_->ConstNull(col.GetType())));
+  }
   // set its execution context to whatever exec context was passed in here
 
   for(auto &sub_fn : fns){
