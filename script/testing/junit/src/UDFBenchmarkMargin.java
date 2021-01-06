@@ -34,11 +34,10 @@ public class UDFBenchmarkMargin {
     //private static final String SQL_QUERY_2 = "SELECT x+1 FROM sample LIMIT %d;";
     //private static final String SQL_QUERY_3 = "SELECT compTest02(x) FROM sample LIMIT %d;";
 
-    private static final String SQL_CREATE_FUNCTION = "CREATE FUNCTION margin(partkey integer) RETURNS integer AS\n" +
+    private static final String SQL_CREATE_FUNCTION = "CREATE FUNCTION margin2(partkey integer) RETURNS integer AS\n" +
 "$$\n" +
 "  DECLARE\n" +
-"    this_order_k integer := NULL;\n" +
-"    this_order_d date := NULL;\n" +
+"    this_order record;\n" +
 "    buy            integer           := NULL;\n" +
 "    sell           integer           := NULL;\n" +
 "    margin         numeric(15,2) := NULL;\n" +
@@ -46,28 +45,23 @@ public class UDFBenchmarkMargin {
 "    cheapest_order integer;\n" +
 "    price          numeric(15,2);\n" +
 "    profit         numeric(15,2);\n" +
+"    tmp_d date;\n" +
 "  BEGIN\n" +
 "    -- ➊ first order for the given part\n" +
-"    SELECT o.o_orderdate into this_order_d\n" +
+"    SELECT o.o_orderkey, o.o_orderdate into this_order\n" +
 "                   FROM   lineitem AS l, orders AS o\n" +
 "                   WHERE  l.l_orderkey = o.o_orderkey\n" +
 "                   AND    l.l_partkey  = partkey\n" +
 "                   ORDER BY o.o_orderdate\n" +
 "                   LIMIT 1;\n" +
 "\n" +
-"    SELECT o.o_orderkey into this_order_k\n" +
-"                   FROM   lineitem AS l, orders AS o\n" +
-"                   WHERE  l.l_orderkey = o.o_orderkey\n" +
-"                   AND    l.l_partkey  = partkey\n" +
-"                   ORDER BY o.o_orderdate\n" +
-"                   LIMIT 1;\n" +
 "\n" +
 "    -- hunt for the best margin while there are more orders to consider\n" +
-"    WHILE this_order_k IS NOT NULL LOOP\n" +
+"    WHILE this_order.o_orderkey IS NOT NULL LOOP\n" +
 "      -- ➋ price of part in this order\n" +
 "      SELECT MIN(l.l_extendedprice * (1 - l.l_discount) * (1 + l.l_tax)) into price\n" +
 "                FROM   lineitem AS l\n" +
-"                WHERE  l.l_orderkey = this_order_k\n" +
+"                WHERE  l.l_orderkey = this_order.o_orderkey\n" +
 "                AND    l.l_partkey  = partkey;\n" +
 "\n" +
 "      -- if this the new cheapest price, remember it\n" +
@@ -77,7 +71,7 @@ public class UDFBenchmarkMargin {
 "\n" +
 "      IF price <= cheapest THEN\n" +
 "        cheapest       := price;\n" +
-"        cheapest_order := this_order_k;\n" +
+"        cheapest_order := this_order.o_orderkey;\n" +
 "      END IF;\n" +
 "      -- compute current obtainable margin\n" +
 "      profit := price - cheapest;\n" +
@@ -86,28 +80,23 @@ public class UDFBenchmarkMargin {
 "      END IF;\n" +
 "      IF profit >= margin THEN\n" +
 "        buy    := cheapest_order;\n" +
-"        sell   := this_order_k;\n" +
+"        sell   := this_order.o_orderkey;\n" +
 "        margin := profit;\n" +
 "      END IF;\n" +
+"      tmp_d = this_order.o_orderdate;\n" +
 "\n" +
 "      -- ➌ find next order (if any) that traded the part\n" +
-"      SELECT o.o_orderkey into this_order_k\n" +
+"      SELECT o.o_orderkey, o.o_orderdate into this_order\n" +
 "                     FROM   lineitem AS l, orders AS o\n" +
 "                     WHERE  l.l_orderkey = o.o_orderkey\n" +
 "                     AND    l.l_partkey  = partkey\n" +
-"                     AND    o.o_orderdate > this_order_d\n" +
+"                     AND    o.o_orderdate > tmp_d\n" +
 "                     ORDER BY o.o_orderdate\n" +
 "                     LIMIT 1;\n" +
-"      SELECT o.o_orderdate into this_order_d\n" +
-"                     FROM   lineitem AS l, orders AS o\n" +
-"                     WHERE  l.l_orderkey = o.o_orderkey\n" +
-"                     AND    l.l_partkey  = partkey\n" +
-"                     AND    o.o_orderdate > this_order_d\n" +
-"                     ORDER BY o.o_orderdate\n" +
-"                     LIMIT 1;\n" +
+"\n" +
 "    END LOOP;\n" +
 "\n" +
-"    RETURN buy;\n" +
+"    RETURN sell;\n" +
 "  END;\n" +
 "$$\n" +
 "LANGUAGE PLPGSQL;";
