@@ -100,7 +100,7 @@ fun main(exec_ctx: *ExecutionContext) -> int32 {
 
   var lineitem_l_partkey_l_orderkey_oid = @testCatalogIndexLookup(exec_ctx, "lineitem_l_partkey_l_orderkey")
   //var orders_o_orderdate_o_orderkey_oid = @testCatalogIndexLookup(exec_ctx, "orders_o_orderdate_o_orderkey")
-  var l_pk_oid = 1020
+  var l_pk_oid = 1019
 
   @indCteScanInit(&cte_scan, exec_ctx, TEMP_OID_MASK, temp_col_oids, col_types, false)
   @tableIterInit(partkeys_tvi_2, exec_ctx, partkey_table_oid, partkeys_col_oids_2)
@@ -190,9 +190,10 @@ fun main(exec_ctx: *ExecutionContext) -> int32 {
                       //sample_out3.col1 = @intToSql(3201234)
                       //sample_out3 = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
                       //sample_out3.col1 = @prGetInt(table_pr190, 0)
-                      var sortRow190 = @ptrCast(*SortRow, @sorterInsert(&sorter))
+                      var sortRow190 = @ptrCast(*SortRow, @sorterInsertTopK(&sorter, 1))
                       sortRow190.attr0 = @prGetInt(table_pr190, 0)
                       sortRow190.attr1 = @prGetDate(table_pr190, 1)
+                      @sorterInsertTopKFinish(&sorter, 1)
                   }
               }
               @indexIteratorFree(&index_iter178)
@@ -210,9 +211,9 @@ fun main(exec_ctx: *ExecutionContext) -> int32 {
   for (; @sorterIterHasNext(base_iter); @sorterIterNext(base_iter)) {
       var sortRow211 = @ptrCast(*SortRow, @sorterIterGetRow(base_iter))
       //var sample_out2 = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
-      //  sample_out2.col1 = @intToSql(3201234)
+      //  sample_out2.col1 = @intToSql(987653)
       //  sample_out2 = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
-      //          sample_out2.col1 = sortRow211.attr0
+      //  sample_out2.col1 = sortRow211.attr0
       key_val179 = sortRow211.attr0
       date_val179 = sortRow211.attr1
   }
@@ -255,7 +256,7 @@ fun main(exec_ctx: *ExecutionContext) -> int32 {
         var this_order_d = @vpiGetDateNull(ind_vpi, 9)
         var rec = @vpiGetBool(ind_vpi, 10)
 
-        //sample_out = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
+        //var sample_out = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
         //sample_out.col1 = res
         //sample_out = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
         //sample_out.col1 = buy
@@ -336,6 +337,7 @@ fun main(exec_ctx: *ExecutionContext) -> int32 {
             var aggs : AggPayload
             //sample_out = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
             //sample_out.col1 = @intToSql(268)
+            @aggInit(&aggs.agg_term_attr0)
             for (@indexIteratorScanKey(&agg_index_iter); @indexIteratorAdvance(&agg_index_iter); ) {
                 var table_pr = @indexIteratorGetTablePR(&agg_index_iter)
                 //sample_out = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
@@ -361,19 +363,28 @@ fun main(exec_ctx: *ExecutionContext) -> int32 {
                  //sample_out = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
                  //sample_out.col1 = partkey
 
-                 if(@sqlToBool(@prGetInt(table_pr, 4) == this_order_k)
-                      and (@sqlToBool(@prGetInt(table_pr, 3) == partkey))){
+                 //var sample_out_16 = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
+                 //sample_out_16.col1 = @intToSql(625)
+                 //sample_out_16 = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
+                 //sample_out_16.col1 = @prGetInt(table_pr, 3)
+                 //sample_out_16 = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
+                 //sample_out_16.col1 = @prGetInt(table_pr, 4)
+                 if(@sqlToBool(@prGetInt(table_pr, 3) == this_order_k)
+                      and (@sqlToBool(@prGetInt(table_pr, 4) == partkey))){
                       var aggValues: AggValues
-                      aggValues.agg_term_attr0 = @prGetDouble(table_pr, 0) * @intToSql(1)
-                        - @prGetDouble(table_pr, 1) * @intToSql(1) + @prGetDouble(table_pr, 2)
+                      //sample_out_16 = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
+                      //                 sample_out_16.col1 = @intToSql(700)
+                      aggValues.agg_term_attr0 = @prGetDouble(table_pr, 0) * (@intToSql(1)
+                        - @prGetDouble(table_pr, 1)) * (@intToSql(1) + @prGetDouble(table_pr, 2))
+                        //sample_out_16.col2 = aggValues.agg_term_attr0
                       @aggAdvance(&aggs.agg_term_attr0, &aggValues.agg_term_attr0)
                   }
             }
-            @indexIteratorFree(&agg_index_iter)
             price_3 = @aggResult(&aggs.agg_term_attr0)
-            //sample_out = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
-            //sample_out.col1 = @intToSql(325)
-            //sample_out.col2 = price_3
+            //var sample_out_15 = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
+            //            sample_out_15.col1 = @intToSql(325)
+            //            sample_out_15.col2 = price_3
+            @indexIteratorFree(&agg_index_iter)
 
             //sample_out = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
             //            sample_out.col1 = @intToSql(5000)
@@ -459,16 +470,16 @@ fun main(exec_ctx: *ExecutionContext) -> int32 {
                                     var slot = @indexIteratorGetSlot(&index_iter448)
                                     if (@sqlToBool(@prGetInt(table_pr443, 0) == @prGetInt(table_pr456, 0))
                                     and @sqlToBool(@prGetDate(table_pr456, 1) > this_order_d)) {
-                                        var sortRow456 = @ptrCast(*SortRow, @sorterInsert(&sorter))
+                                        var sortRow456 = @ptrCast(*SortRow, @sorterInsertTopK(&sorter, 1))
                                         sortRow456.attr0 = @prGetInt(table_pr456, 0)
                                         sortRow456.attr1 = @prGetDate(table_pr456, 1)
+                                        @sorterInsertTopKFinish(&sorter, 1)
                                     }
                                 }
                                 @indexIteratorFree(&index_iter448)
                             }
                         }
                         @indexIteratorFree(&index_iter435)
-
                    var iterBase17: SorterIterator
                    var iter17 = &iterBase17
                    @sorterIterInit(iter17, &sorter)
@@ -520,16 +531,16 @@ fun main(exec_ctx: *ExecutionContext) -> int32 {
                                        var slot = @indexIteratorGetSlot(&index_iter508)
                                        if (@sqlToBool(@prGetInt(table_pr5021, 0) == @prGetInt(table_pr502, 0))
                                            and @sqlToBool(@prGetDate(table_pr502, 1) > this_order_d)) {
-                                           var sortRow502 = @ptrCast(*SortRow, @sorterInsert(&sorter))
+                                           var sortRow502 = @ptrCast(*SortRow, @sorterInsertTopK(&sorter,1))
                                            sortRow502.attr0 = @prGetInt(table_pr502, 0)
                                            sortRow502.attr1 = @prGetDate(table_pr502, 1)
+                                           @sorterInsertTopKFinish(&sorter, 1)
                                        }
                                    }
                                    @indexIteratorFree(&index_iter508)
                                }
                            }
                            @indexIteratorFree(&index_iter495)
-
                      var iterBase2: SorterIterator
                      var iter2 = &iterBase2
                      if_result17_this_order_k = @initSqlNull(&if_result17_this_order_k)
@@ -555,8 +566,8 @@ fun main(exec_ctx: *ExecutionContext) -> int32 {
                  if_result11_this_order_d = if_result17_this_order_d
                  if_result11_rec = if_result17_rec
                 }else{
-                //sample_out = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
-                //                             sample_out.col1 = @intToSql(509)
+                    //var sample_out_569 = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
+                    //sample_out_569.col1 = @intToSql(509)
                     var if_result17_res : Integer
                     var if_result17_buy : Integer
                     var if_result17_cheapest : Real
@@ -571,30 +582,36 @@ fun main(exec_ctx: *ExecutionContext) -> int32 {
 
                     var cheapest_9 = price_3
                     var cheapest_order_7 = this_order_k
-                    var profit_4 = price_3 - price_3
+                    var profit_45 = price_3 - cheapest_4
 
-                    var margin_5 = margin
-                    if(@isValNull(margin_5)){
-                       margin_5 = profit_4
+                    var margin_54 = margin
+                    if(@isValNull(margin_54)){
+                       margin_54 = profit_45
                     }
-                    var q9_4 = profit_4 >= margin_5
-                    //sample_out = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
-                    //                        sample_out.col2 = profit_4
+                    var q9_45 = profit_45 >= margin_54
+                   //sample_out_569 = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
+                   //sample_out_569.col2 = price_3
+                   //sample_out_569 = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
+                   //sample_out_569.col2 = cheapest_4
+                   //sample_out_569 = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
+                   //sample_out_569.col2 = profit_45
+                   //sample_out_569 = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
+                   //sample_out_569.col2 = margin_54
 
-                    if(@sqlToBool(q9_4)){
-                        //sample_out = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
-                        //sample_out.col1 = @intToSql(528)
+                    if(@sqlToBool(q9_45)){
+                        //sample_out_569 = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
+                        //sample_out_569.col1 = @intToSql(528)
                         if_result17_res = @initSqlNull(&if_result17_res)
                         //var sample_out397 = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
                         //                         sample_out397.col1 = @intToSql(397)
                         //                         sample_out397 = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
                         //                         sample_out397.col1 = cheapest_order_7
                         if_result17_buy = cheapest_order_7
-                        if_result17_cheapest = cheapest_9
+                        if_result17_cheapest = cheapest_4
                         if_result17_cheapest_order = cheapest_order_7
-                        if_result17_margin = profit_4
+                        if_result17_margin = profit_45
                         if_result17_partkey = partkey
-                        if_result17_profit = profit_4
+                        if_result17_profit = profit_45
                         if_result17_sell = this_order_k
                         if_result17_rec = @boolToSql(true)
 
@@ -632,16 +649,16 @@ fun main(exec_ctx: *ExecutionContext) -> int32 {
                                       var slot = @indexIteratorGetSlot(&index_iter619)
                                       if (@sqlToBool(@prGetInt(table_pr6131, 0) == @prGetInt(table_pr613, 0))
                                           and @sqlToBool(@prGetDate(table_pr613, 1) > this_order_d)) {
-                                          var sortRow613 = @ptrCast(*SortRow, @sorterInsert(&sorter))
+                                          var sortRow613 = @ptrCast(*SortRow, @sorterInsertTopK(&sorter, 1))
                                           sortRow613.attr0 = @prGetInt(table_pr613, 0)
                                           sortRow613.attr1 = @prGetDate(table_pr613, 1)
+                                          @sorterInsertTopKFinish(&sorter, 1)
                                       }
                                   }
                                   @indexIteratorFree(&index_iter619)
                               }
                           }
                           @indexIteratorFree(&index_iter606)
-
                           var iterBase: SorterIterator
                           var iter646 = &iterBase
                           @sorterIterInit(iter646, &sorter)
@@ -655,13 +672,15 @@ fun main(exec_ctx: *ExecutionContext) -> int32 {
                           @sorterIterClose(iter646)
                           @sorterFree(&sorter)
                     }else{
+                    //sample_out_569 = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
+                    //sample_out_569.col1 = @intToSql(628)
                     if_result17_res = @initSqlNull(&if_result17_res)
                     if_result17_buy = buy
                     if_result17_cheapest = cheapest_4
                     if_result17_cheapest_order = cheapest_order
-                    if_result17_margin = margin_5
+                    if_result17_margin = margin_54
                     if_result17_partkey = partkey
-                    if_result17_profit = profit_4
+                    if_result17_profit = profit_45
                     if_result17_sell = sell
                     if_result17_rec = @boolToSql(true)
                     @sorterInit(&sorter, exec_ctx, Compare, @sizeOf(SortRow))
@@ -693,16 +712,16 @@ fun main(exec_ctx: *ExecutionContext) -> int32 {
                                   var slot = @indexIteratorGetSlot(&index_iter679)
                                   if (@sqlToBool(@prGetInt(table_pr6731, 0) == @prGetInt(table_pr673, 0))
                                         and @sqlToBool(@prGetDate(table_pr673, 1) > this_order_d)) {
-                                      var sortRow673 = @ptrCast(*SortRow, @sorterInsert(&sorter))
+                                      var sortRow673 = @ptrCast(*SortRow, @sorterInsertTopK(&sorter, 1))
                                       sortRow673.attr0 = @prGetInt(table_pr673, 0)
                                       sortRow673.attr1 = @prGetDate(table_pr673, 1)
+                                      @sorterInsertTopKFinish(&sorter, 1)
                                   }
                               }
                               @indexIteratorFree(&index_iter679)
                           }
                       }
                       @indexIteratorFree(&index_iter666)
-
                         var iterBase: SorterIterator
                         var iter706 = &iterBase
                         @sorterIterInit(iter706, &sorter)
@@ -812,7 +831,8 @@ fun main(exec_ctx: *ExecutionContext) -> int32 {
       //out7 = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
       //        out.col1 = @intToSql(783)
        //var out7 = @ptrCast(*output_struct, @resultBufferAllocRow(output_buffer))
-       // out7.col1 = resres
+       //out7.col1 = @vpiGetIntNull(endvpi, 1)
+       //out7.col2 = @vpiGetRealNull(endvpi, 4)
     }
     @vpiReset(endvpi)
   }
