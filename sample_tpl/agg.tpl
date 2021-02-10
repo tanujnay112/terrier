@@ -6,6 +6,10 @@ struct State {
     count: int32
 }
 
+struct OutputStruct {
+    out0: Integer
+}
+
 struct Agg {
     key: Integer
     count: CountStarAggregate
@@ -35,51 +39,43 @@ fun updateAgg(agg: *Agg, vpi: *VectorProjectionIterator) -> nil {
     @aggAdvance(&agg.count, &input)
 }
 
-fun pipeline_1(execCtx: *ExecutionContext, state: *State) -> nil {
+fun pipeline_1(execCtx: *ExecutionContext, state: *State, lam : lambda [(Integer)->nil] ) -> nil {
     var ht = &state.table
     var tvi: TableVectorIterator
     var table_oid = @testCatalogLookup(execCtx, "test_1", "")
     var col_oids: [2]uint32
-    col_oids[0] = @testCatalogLookup(execCtx, "test_1", "colA")
-    col_oids[1] = @testCatalogLookup(execCtx, "test_1", "colB")
+    col_oids[0] = @testCatalogLookup(execCtx, "test_1", "cola")
+    col_oids[1] = @testCatalogLookup(execCtx, "test_1", "colb")
     for (@tableIterInit(&tvi, execCtx, table_oid, col_oids); @tableIterAdvance(&tvi); ) {
         var vec = @tableIterGetVPI(&tvi)
         for (; @vpiHasNext(vec); @vpiAdvance(vec)) {
-            var hash_val = @hash(@vpiGetInt(vec, 1))
-            var agg = @ptrCast(*Agg, @aggHTLookup(ht, hash_val, keyCheck, vec))
-            if (agg == nil) {
-                agg = @ptrCast(*Agg, @aggHTInsert(ht, hash_val))
-                constructAgg(agg, vec)
-            } else {
-                updateAgg(agg, vec)
-            }
+           var output_row: OutputStruct
+           output_row.out0 = @vpiGetIntNull(vec, 0)
+           lam(output_row.out0)
         }
     }
     @tableIterClose(&tvi)
 }
 
-fun pipeline_2(state: *State) -> nil {
-    var aht_iter: AHTIterator
-    var iter = &aht_iter
-    for (@aggHTIterInit(iter, &state.table); @aggHTIterHasNext(iter); @aggHTIterNext(iter)) {
-        var agg = @ptrCast(*Agg, @aggHTIterGetRow(iter))
-        state.count = state.count + 1
-    }
-    @aggHTIterClose(iter)
-}
-
-fun execQuery(execCtx: *ExecutionContext, qs: *State) -> nil {
-    pipeline_1(execCtx, qs)
-    pipeline_2(qs)
+fun execQuery(execCtx: *ExecutionContext, qs: *State, lam : lambda [(Integer)->nil] ) -> nil {
+    pipeline_1(execCtx, qs, lam)
 }
 
 fun main(execCtx: *ExecutionContext) -> int32 {
+    var count : Integer
+    count = @intToSql(0)
+    var lam = lambda [count] (x : Integer) -> nil {
+                        count = count + 1
+                    }
     var state: State
 
     setUpState(execCtx, &state)
-    execQuery(execCtx, &state)
+    execQuery(execCtx, &state, lam)
     tearDownState(&state)
 
     var ret = state.count
-    return ret
+    if(count > 0) {
+        return 1
+    }
+    return 0
 }

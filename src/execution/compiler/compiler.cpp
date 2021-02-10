@@ -1,3 +1,5 @@
+#include <iostream>
+
 #include "execution/compiler/compiler.h"
 
 #include "execution/ast/ast_pretty_print.h"
@@ -80,6 +82,8 @@ void Compiler::Run(Compiler::Callbacks *callbacks) {
 
   callbacks->EndPhase(Phase::SemanticAnalysis, this);
 
+  ast::AstPrettyPrint::Dump(std::cout, root_);
+
   // -------------------------------------------------------
   // Phase 3 : Bytecode Generation
   // -------------------------------------------------------
@@ -98,6 +102,8 @@ void Compiler::Run(Compiler::Callbacks *callbacks) {
 
   callbacks->EndPhase(Phase::BytecodeGeneration, this);
 
+//  bytecode_module_->Dump(std::cout);
+
   // -------------------------------------------------------
   // Phase 4 : Module Generation
   // -------------------------------------------------------
@@ -113,6 +119,7 @@ void Compiler::Run(Compiler::Callbacks *callbacks) {
     callbacks->OnError(Phase::ModuleGeneration, this);
     return;
   }
+//  module->GetBytecodeModule()->Dump(std::cout);
 
   callbacks->EndPhase(Phase::ModuleGeneration, this);
 

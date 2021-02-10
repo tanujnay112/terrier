@@ -6,6 +6,9 @@
 
 #include "binder/sql_node_visitor.h"
 #include "catalog/catalog_defs.h"
+#include "parser/postgresparser.h"
+#include "parser/select_statement.h"
+#include "parser/udf/udf_ast_context.h"
 #include "type/type_id.h"
 
 namespace noisepage {
@@ -56,6 +59,9 @@ class BindNodeVisitor final : public SqlNodeVisitor {
                       common::ManagedPointer<std::vector<parser::ConstantValueExpression>> parameters,
                       common::ManagedPointer<std::vector<type::TypeId>> desired_parameter_types);
 
+  std::unordered_map<std::string, std::pair<std::string, size_t>> BindAndGetUDFParams(common::ManagedPointer<parser::ParseResult> parse_result,
+                                                              common::ManagedPointer<parser::udf::UDFASTContext> udf_ast_context);
+
   void Visit(common::ManagedPointer<parser::AnalyzeStatement> node) override;
   void Visit(common::ManagedPointer<parser::CopyStatement> node) override;
   void Visit(common::ManagedPointer<parser::CreateFunctionStatement> node) override;
@@ -98,10 +104,14 @@ class BindNodeVisitor final : public SqlNodeVisitor {
   std::unique_ptr<BinderSherpa> sherpa_;
   /** Current context of the query or subquery */
   common::ManagedPointer<BinderContext> context_ = nullptr;
+  std::vector<BinderContext> lateral_contexts_;
 
+  common::ManagedPointer<parser::udf::UDFASTContext> udf_ast_context_ = nullptr;
+  std::unordered_map<std::string, std::pair<std::string, size_t>> udf_params_;
   /** Catalog accessor */
   const common::ManagedPointer<catalog::CatalogAccessor> catalog_accessor_;
   const catalog::db_oid_t db_oid_;
+  std::vector<std::string> cte_table_name_;
 
   static void InitTableRef(common::ManagedPointer<parser::TableRef> node);
 

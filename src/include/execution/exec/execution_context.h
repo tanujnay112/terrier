@@ -4,6 +4,9 @@
 #include <utility>
 #include <vector>
 
+#include "brain/brain_defs.h"
+#include "brain/operating_unit.h"
+#include "parser/expression/constant_value_expression.h"
 #include "common/managed_pointer.h"
 #include "execution/exec/execution_settings.h"
 #include "execution/exec/output.h"
@@ -173,6 +176,78 @@ class EXPORT ExecutionContext {
    */
   void InitializeParallelOUFeatureVector(selfdriving::ExecOUFeatureVector *ouvec, pipeline_id_t pipeline_id);
 
+  void StartParams(){
+    udf_param_stack_.push_back({});
+  }
+
+  void PopParams() {
+    udf_param_stack_.pop_back();
+  }
+
+  void AddParam(common::ManagedPointer<sql::Val> val){
+    udf_param_stack_.back().push_back(val.CastManagedPointerTo<const sql::Val>());
+  }
+
+//  void AddParamInt(execution::sql::Integer *val){
+//    // figure out how to get the typeid
+//    type::TypeId ret_type = type::TypeId::INTEGER;
+//    udf_param_stack_.back().emplace_back(ret_type, *val);
+//  }
+//
+//  void AddParamBool(execution::sql::BoolVal *val){
+//    // figure out how to get the typeid
+//    type::TypeId ret_type = type::TypeId::BOOLEAN;
+//    udf_param_stack_.back().emplace_back(ret_type, *val);
+//  }
+//
+//  void AddParamTinyInt(execution::sql::Integer *val){
+//    // figure out how to get the typeid
+//    type::TypeId ret_type = type::TypeId::TINYINT;
+//    udf_param_stack_.back().emplace_back(ret_type, *val);
+//  }
+//
+//  void AddParamSmallInt(execution::sql::Integer *val){
+//    // figure out how to get the typeid
+//    type::TypeId ret_type = type::TypeId::SMALLINT;
+//    udf_param_stack_.back().emplace_back(ret_type, *val);
+//  }
+//
+//  void AddParamBigInt(execution::sql::Integer *val){
+//    // figure out how to get the typeid
+//    type::TypeId ret_type = type::TypeId::BIGINT;
+//    udf_param_stack_.back().emplace_back(ret_type, *val);
+//  }
+//
+//  void AddParamReal(execution::sql::Real *val){
+//    // figure out how to get the typeid
+//    type::TypeId ret_type = type::TypeId::DECIMAL;
+//    udf_param_stack_.back().emplace_back(ret_type, *val);
+//  }
+//
+//  void AddParamDouble(execution::sql::Real *val){
+//    // figure out how to get the typeid
+//    type::TypeId ret_type = type::TypeId::DECIMAL;
+//    udf_param_stack_.back().emplace_back(ret_type, *val);
+//  }
+//
+//  void AddParamDateVal(execution::sql::DateVal *val){
+//    // figure out how to get the typeid
+//    type::TypeId ret_type = type::TypeId::DATE;
+//    udf_param_stack_.back().emplace_back(ret_type, *val);
+//  }
+//
+//  void AddParamTimestampVal(execution::sql::TimestampVal *val){
+//    // figure out how to get the typeid
+//    type::TypeId ret_type = type::TypeId::TIMESTAMP;
+//    udf_param_stack_.back().emplace_back(ret_type, *val);
+//  }
+//
+//  void AddParamString(execution::sql::StringVal *val){
+//    // figure out how to get the typeid
+//    type::TypeId ret_type = type::TypeId::VARCHAR;
+//    udf_param_stack_.back().emplace_back(ret_type, *val);
+//  }
+
   /**
    * @return the db oid
    */
@@ -196,7 +271,7 @@ class EXPORT ExecutionContext {
    * Set the execution parameters.
    * @param params The execution parameters.
    */
-  void SetParams(common::ManagedPointer<const std::vector<parser::ConstantValueExpression>> params) {
+  void SetParams(common::ManagedPointer<std::vector<common::ManagedPointer<const sql::Val>>> params) {
     params_ = params;
   }
 
@@ -204,7 +279,9 @@ class EXPORT ExecutionContext {
    * @param param_idx index of parameter to access
    * @return immutable parameter at provided index
    */
-  const parser::ConstantValueExpression &GetParam(uint32_t param_idx) const;
+  common::ManagedPointer<const sql::Val> GetParam(uint32_t param_idx) const {  return udf_param_stack_.empty()
+                                                        ? (*params_)[param_idx]
+                                                        : udf_param_stack_.back()[param_idx]; }
 
   /**
    * INSERT, UPDATE, and DELETE queries return a number for the rows affected, so this should be incremented in the root
@@ -337,7 +414,10 @@ class EXPORT ExecutionContext {
 
   common::ManagedPointer<catalog::CatalogAccessor> accessor_;
   common::ManagedPointer<metrics::MetricsManager> metrics_manager_;
-  common::ManagedPointer<const std::vector<parser::ConstantValueExpression>> params_;
+  common::ManagedPointer<std::vector<common::ManagedPointer<const sql::Val>>> params_;
+
+  // for UDF's
+  std::vector<std::vector<common::ManagedPointer<const sql::Val>>> udf_param_stack_;
   uint8_t execution_mode_;
   uint32_t rows_affected_ = 0;
 

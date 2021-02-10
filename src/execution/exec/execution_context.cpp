@@ -190,9 +190,6 @@ void ExecutionContext::InitializeParallelOUFeatureVector(selfdriving::ExecOUFeat
   }
 }
 
-const parser::ConstantValueExpression &ExecutionContext::GetParam(const uint32_t param_idx) const {
-  return (*params_)[param_idx];
-}
 
 void ExecutionContext::RegisterHook(size_t hook_idx, HookFn hook) {
   NOISEPAGE_ASSERT(hook_idx < hooks_.capacity(), "Incorrect number of reserved hooks");

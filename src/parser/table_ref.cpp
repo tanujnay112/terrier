@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -84,6 +85,26 @@ DEFINE_JSON_BODY_DECLARATIONS(JoinDefinition);
 
 std::unique_ptr<JoinDefinition> JoinDefinition::Copy() {
   return std::make_unique<JoinDefinition>(type_, left_->Copy(), right_->Copy(), condition_);
+}
+
+bool TableRef::IsLateral() const {
+  return (select_ != nullptr && select_->IsLateral()) || (join_ != nullptr
+                                                          && (join_->GetLeftTable()->IsLateral()
+                                                              || join_->GetRightTable()->IsLateral()));
+}
+
+void TableRef::SetServesLateral() {
+  serves_lateral_ = true;
+  if(GetSelect() != nullptr){
+    GetSelect()->SetServesLateral();
+    return;
+  }
+
+  if(GetJoin() != nullptr){
+    auto join = GetJoin();
+    join->GetLeftTable()->SetServesLateral();
+    join->GetRightTable()->SetServesLateral();
+  }
 }
 
 nlohmann::json TableRef::ToJson() const {
@@ -193,4 +214,20 @@ std::unique_ptr<TableRef> TableRef::Copy() {
   }
   return table_ref;
 }
+
+void TableRef::GetConstituentTableAliases(std::vector<std::string> *aliases) {
+  if (!alias_.empty()) {
+    aliases->push_back(GetAlias());
+  }
+
+  if (join_ != nullptr) {
+    join_->GetLeftTable()->GetConstituentTableAliases(aliases);
+    join_->GetRightTable()->GetConstituentTableAliases(aliases);
+  }
+
+  for (auto &table : list_) {
+    table->GetConstituentTableAliases(aliases);
+  }
+}
+
 }  // namespace noisepage::parser

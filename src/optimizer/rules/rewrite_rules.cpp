@@ -111,7 +111,9 @@ void RewritePushImplicitFilterThroughJoin::Transform(common::ManagedPointer<Abst
     std::vector<std::unique_ptr<AbstractOptimizerNode>> c;
     c.emplace_back(std::move(left_branch));
     c.emplace_back(std::move(right_branch));
-    auto output = std::make_unique<OperatorNode>(LogicalInnerJoin::Make(std::move(join_predicates))
+    auto output = std::make_unique<OperatorNode>(LogicalInnerJoin::Make(std::move(join_predicates), join_op_expr->Contents()
+                                                                                                        ->GetContentsAs<LogicalInnerJoin>()
+                                                                                                            ->GetLateralOids())
                                                      .RegisterWithTxnContext(context->GetOptimizerContext()->GetTxn()),
                                                  std::move(c), context->GetOptimizerContext()->GetTxn());
     transformed->emplace_back(std::move(output));
@@ -153,6 +155,7 @@ void RewritePushExplicitFilterThroughJoin::Transform(common::ManagedPointer<Abst
 
   const auto &left_group_aliases_set = memo.GetGroupByID(left_group_id)->GetTableAliases();
   const auto &right_group_aliases_set = memo.GetGroupByID(right_group_id)->GetTableAliases();
+  auto lateral_oids = join_op_expr->Contents()->GetContentsAs<LogicalInnerJoin>()->GetLateralOids();
   auto &input_join_predicates = join_op_expr->Contents()->GetContentsAs<LogicalInnerJoin>()->GetJoinPredicates();
   auto &filter_predicates = input->Contents()->GetContentsAs<LogicalFilter>()->GetPredicates();
 
@@ -243,7 +246,7 @@ void RewritePushExplicitFilterThroughJoin::Transform(common::ManagedPointer<Abst
                                                 .RegisterWithTxnContext(context->GetOptimizerContext()->GetTxn()),
                                             std::move(c), context->GetOptimizerContext()->GetTxn());
   } else {
-    output = std::make_unique<OperatorNode>(LogicalInnerJoin::Make(std::move(join_predicates))
+    output = std::make_unique<OperatorNode>(LogicalInnerJoin::Make(std::move(join_predicates), std::move(lateral_oids))
                                                 .RegisterWithTxnContext(context->GetOptimizerContext()->GetTxn()),
                                             std::move(c), context->GetOptimizerContext()->GetTxn());
   }
@@ -401,6 +404,78 @@ void RewriteEmbedFilterIntoGet::Transform(common::ManagedPointer<AbstractOptimiz
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+/// RewriteEmbedFilterIntoChildlessCteScan
+///////////////////////////////////////////////////////////////////////////////
+RewriteEmbedFilterIntoChildlessCteScan::RewriteEmbedFilterIntoChildlessCteScan() {
+  type_ = RuleType::EMBED_FILTER_INTO_CTE_SCAN;
+
+  match_pattern_ = new Pattern(OpType::LOGICALFILTER);
+  auto child = new Pattern(OpType::LOGICALCTESCAN);
+
+  match_pattern_->AddChild(child);
+}
+
+bool RewriteEmbedFilterIntoChildlessCteScan::Check(common::ManagedPointer<AbstractOptimizerNode> plan,
+                                                   OptimizationContext *context) const {
+  (void)context;
+  (void)plan;
+  return true;
+}
+
+void RewriteEmbedFilterIntoChildlessCteScan::Transform(common::ManagedPointer<AbstractOptimizerNode> input,
+                                                       std::vector<std::unique_ptr<AbstractOptimizerNode>> *transformed,
+                                                       UNUSED_ATTRIBUTE OptimizationContext *context) const {
+  auto get = input->GetChildren()[0]->Contents()->GetContentsAs<LogicalCteScan>();
+  std::string tbl_alias = std::string(get->GetTableAlias());
+  std::vector<AnnotatedExpression> predicates = input->Contents()->GetContentsAs<LogicalFilter>()->GetPredicates();
+  std::vector<std::unique_ptr<AbstractOptimizerNode>> c;
+  auto output = std::make_unique<OperatorNode>(
+      LogicalCteScan::Make(get->GetTableAlias(), get->GetTableName(), get->GetTableOid(), get->GetTableSchema(), {},
+                           get->GetCTEType(), std::move(predicates))
+          .RegisterWithTxnContext(context->GetOptimizerContext()->GetTxn()),
+      std::move(c), context->GetOptimizerContext()->GetTxn());
+  transformed->emplace_back(std::move(output));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+/// RewriteEmbedFilterIntoCteScan
+///////////////////////////////////////////////////////////////////////////////
+RewriteEmbedFilterIntoCteScan::RewriteEmbedFilterIntoCteScan() {
+  type_ = RuleType::EMBED_FILTER_INTO_CTE_SCAN;
+
+  match_pattern_ = new Pattern(OpType::LOGICALFILTER);
+  auto child = new Pattern(OpType::LOGICALCTESCAN);
+  child->AddChild(new Pattern(OpType::LEAF));
+
+  match_pattern_->AddChild(child);
+}
+
+bool RewriteEmbedFilterIntoCteScan::Check(common::ManagedPointer<AbstractOptimizerNode> plan,
+                                          OptimizationContext *context) const {
+  (void)context;
+  (void)plan;
+  return true;
+}
+
+void RewriteEmbedFilterIntoCteScan::Transform(common::ManagedPointer<AbstractOptimizerNode> input,
+                                              std::vector<std::unique_ptr<AbstractOptimizerNode>> *transformed,
+                                              UNUSED_ATTRIBUTE OptimizationContext *context) const {
+  auto get = input->GetChildren()[0]->Contents()->GetContentsAs<LogicalCteScan>();
+  std::string tbl_alias = std::string(get->GetTableAlias());
+  std::vector<AnnotatedExpression> predicates = input->Contents()->GetContentsAs<LogicalFilter>()->GetPredicates();
+  std::vector<std::unique_ptr<AbstractOptimizerNode>> c;
+  for (auto child : input->GetChildren()[0]->GetChildren()) {
+    c.push_back(child->Copy());
+  }
+  auto output = std::make_unique<OperatorNode>(
+      LogicalCteScan::Make(get->GetTableAlias(), get->GetTableName(), get->GetTableOid(), get->GetTableSchema(),
+                           get->GetExpressions(), get->GetCTEType(), std::move(predicates))
+          .RegisterWithTxnContext(context->GetOptimizerContext()->GetTxn()),
+      std::move(c), context->GetOptimizerContext()->GetTxn());
+  transformed->emplace_back(std::move(output));
+}
+
+///////////////////////////////////////////////////////////////////////////////
 /// RewritePullFilterThroughMarkJoin
 ///////////////////////////////////////////////////////////////////////////////
 RewritePullFilterThroughMarkJoin::RewritePullFilterThroughMarkJoin() {
@@ -450,6 +525,71 @@ void RewritePullFilterThroughMarkJoin::Transform(common::ManagedPointer<Abstract
   auto output = std::make_unique<OperatorNode>(join_children[1]->Contents(), std::move(cc),
                                                context->GetOptimizerContext()->GetTxn());
   transformed->emplace_back(std::move(output));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+/// RewriteUnionWithRecursiveCTE
+///////////////////////////////////////////////////////////////////////////////
+RewriteUnionWithRecursiveCTE::RewriteUnionWithRecursiveCTE() {
+  type_ = RuleType::UNION_WITH_RECURSIVE_CTE;
+
+  match_pattern_ = new Pattern(OpType::LOGICALCTESCAN);
+  auto derivedget = new Pattern(OpType::LOGICALQUERYDERIVEDGET);
+  auto logicalunion = new Pattern(OpType::LOGICALUNION);
+  logicalunion->AddChild(new Pattern(OpType::LEAF));
+  logicalunion->AddChild(new Pattern(OpType::LEAF));
+  derivedget->AddChild(logicalunion);
+  match_pattern_->AddChild(derivedget);
+}
+
+RulePromise RewriteUnionWithRecursiveCTE::Promise(GroupExpression *group_expr) const {
+  return RulePromise::LOGICAL_PROMISE;
+}
+
+bool RewriteUnionWithRecursiveCTE::Check(common::ManagedPointer<AbstractOptimizerNode> plan,
+                                         OptimizationContext *context) const {
+  auto cte_scan = plan->Contents()->GetContentsAs<LogicalCteScan>();
+  NOISEPAGE_ASSERT(cte_scan->GetIsInductive(), "should be inductive");
+  return cte_scan->GetIsInductive();
+}
+
+void RewriteUnionWithRecursiveCTE::Transform(common::ManagedPointer<AbstractOptimizerNode> input,
+                                             std::vector<std::unique_ptr<AbstractOptimizerNode>> *transformed,
+                                             OptimizationContext *context) const {
+  auto cte_scan = input->Contents()->GetContentsAs<LogicalCteScan>();
+  auto derived_query_get = input->GetChildren()[0];
+  auto union_node = derived_query_get->GetChildren()[0];
+  auto left_node = union_node->GetChildren()[0];
+  auto right_node = union_node->GetChildren()[1];
+
+  auto derived_node = derived_query_get->Contents()->GetContentsAs<LogicalQueryDerivedGet>();
+  std::vector<std::unique_ptr<AbstractOptimizerNode>> derived_children;
+  derived_children.push_back(left_node->Copy());
+  auto new_derived =
+      std::make_unique<OperatorNode>(Operator(common::ManagedPointer<BaseOperatorNodeContents>(derived_node->Copy()))
+                                         .RegisterWithTxnContext(context->GetOptimizerContext()->GetTxn()),
+                                     std::move(derived_children), context->GetOptimizerContext()->GetTxn());
+
+  //  auto new_derived_query_get_contents =
+  //      Operator(common::ManagedPointer<BaseOperatorNodeContents>
+  //          (derived_query_get->Contents()->GetContentsAs<LogicalQueryDerivedGet>()->Copy()))
+  //          .RegisterWithTxnContext(context->GetOptimizerContext()->GetTxn());
+  //  std::vector<std::unique_ptr<AbstractOptimizerNode>> get_children;
+  //  get_children.push_back(left_node->Copy());
+  //  get_children.push_back(right_node->Copy());
+  //  auto new_derived_query_get = std::make_unique<OperatorNode>(new_derived_query_get_contents,
+  //  std::move(get_children),
+  //                                                              context->GetOptimizerContext()->GetTxn());
+  std::vector<std::unique_ptr<AbstractOptimizerNode>> children;
+  children.push_back(std::move(new_derived));
+  children.push_back(right_node->Copy());
+  auto new_root = std::make_unique<OperatorNode>(
+      LogicalCteScan::Make(cte_scan->GetTableAlias(), cte_scan->GetTableName(), cte_scan->GetTableOid(),
+                           cte_scan->GetTableSchema(), cte_scan->GetExpressions(), cte_scan->GetCTEType(),
+                           cte_scan->GetScanPredicate())
+          .RegisterWithTxnContext(context->GetOptimizerContext()->GetTxn()),
+      std::move(children), context->GetOptimizerContext()->GetTxn());
+  transformed->push_back(std::move(new_root));
 }
 
 ///////////////////////////////////////////////////////////////////////////////

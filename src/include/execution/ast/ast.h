@@ -48,6 +48,7 @@ namespace ast {
   T(DeclStmt)              \
   T(ExpressionStmt)        \
   T(ForStmt)               \
+  T(BreakStmt)             \
   T(ForInStmt)             \
   T(IfStmt)                \
   T(ReturnStmt)
@@ -66,12 +67,14 @@ namespace ast {
   T(IdentifierExpr)                     \
   T(ImplicitCastExpr)                   \
   T(IndexExpr)                          \
+  T(LambdaExpr)                         \
   T(LitExpr)                            \
   T(MemberExpr)                         \
   T(UnaryOpExpr)                        \
   /* Type Representation Expressions */ \
   T(ArrayTypeRepr)                      \
   T(FunctionTypeRepr)                   \
+  T(LambdaTypeRepr)                     \
   T(MapTypeRepr)                        \
   T(PointerTypeRepr)                    \
   T(StructTypeRepr)
@@ -352,12 +355,14 @@ class FunctionDecl : public Decl {
    * @param name identifier
    * @param func function literal (param types, return type, body)
    */
-  FunctionDecl(const SourcePosition &pos, Identifier name, FunctionLitExpr *func);
+  FunctionDecl(const SourcePosition &pos, Identifier name, FunctionLitExpr *func, bool is_lambda_ = false);
 
   /**
    * @return The function literal defining the body of the function declaration.
    */
   FunctionLitExpr *Function() const { return func_; }
+
+  bool IsLambda() const { return is_lambda_; }
 
   /**
    * Is the given node a function declaration? Needed as part of the custom AST RTTI infrastructure.
@@ -371,6 +376,8 @@ class FunctionDecl : public Decl {
  private:
   // The function definition (signature and body).
   FunctionLitExpr *func_;
+  bool is_lambda_;
+//  ast::Type *capture_type_;
 };
 
 /**
@@ -692,6 +699,27 @@ class IterationStmt : public Stmt {
 };
 
 /**
+ * A break statement.
+ */
+class BreakStmt : public Stmt {
+ public:
+  /**
+   * Constructor
+   * @param pos source position
+   */
+  BreakStmt(const SourcePosition &pos) : Stmt(Kind::BreakStmt, pos) {}
+
+  /**
+   * Is the given node a return statement? Needed as part of the custom AST RTTI infrastructure.
+   * @param node The node to check.
+   * @return True if the node is a return statement; false otherwise.
+   */
+  static bool classof(const AstNode *node) {  // NOLINT
+    return node->GetKind() == Kind::BreakStmt;
+  }
+};
+
+/**
  * A vanilla for-statement.
  */
 class ForStmt : public IterationStmt {
@@ -729,6 +757,13 @@ class ForStmt : public IterationStmt {
    */
   static bool classof(const AstNode *node) {  // NOLINT
     return node->GetKind() == Kind::ForStmt;
+  }
+
+ private:
+  friend class sema::Sema;
+
+  void SetCond(Expr *cond) {
+    cond_ = cond;
   }
 
  private:
@@ -1039,6 +1074,33 @@ class BinaryOpExpr : public Expr {
   Expr *right_;
 };
 
+class LambdaExpr : public Expr {
+ public:
+  LambdaExpr(const SourcePosition &pos, FunctionLitExpr *func, util::RegionVector<ast::Expr*> &&captures)
+      : Expr(Kind::LambdaExpr, pos), captures_{nullptr}, func_lit_(func), capture_idents_{std::move(captures)} {}
+
+  FunctionLitExpr *GetFunctionLitExpr() const { return func_lit_; }
+
+  ast::StructTypeRepr *GetCaptureStruct() const { return captures_; }
+
+  ast::Type *GetCaptureStructType() const { return capture_type_; }
+
+  const Identifier &GetName() const { return name_; }
+
+  const util::RegionVector<ast::Expr*> &GetCaptureIdents() const { return capture_idents_; }
+
+  void SetName(Identifier name) { name_ = name; }
+
+ private:
+  friend class sema::Sema;
+
+  Identifier name_;
+  ast::StructTypeRepr *captures_;
+  ast::Type *capture_type_;
+  FunctionLitExpr *func_lit_;
+  util::RegionVector<ast::Expr*> capture_idents_;
+};
+
 /**
  * A function call expression.
  */
@@ -1047,7 +1109,7 @@ class CallExpr : public Expr {
   /**
    * Type of call (builtin call or regular function call)
    */
-  enum class CallKind : uint8_t { Regular, Builtin };
+  enum class CallKind : uint8_t { Regular, Builtin, Lambda };
 
   /**
    * Constructor for regular calls
@@ -1112,6 +1174,10 @@ class CallExpr : public Expr {
   void SetArgument(uint32_t arg_idx, Expr *expr) {
     NOISEPAGE_ASSERT(arg_idx < NumArgs(), "Out-of-bounds argument access");
     args_[arg_idx] = expr;
+  }
+
+  void PushArgument(Expr *expr) {
+    args_.push_back(expr);
   }
 
  private:
@@ -1202,7 +1268,7 @@ class FunctionLitExpr : public Expr {
    * @param type_repr type representation (param types, return type)
    * @param body body of the function
    */
-  FunctionLitExpr(FunctionTypeRepr *type_repr, BlockStmt *body);
+  FunctionLitExpr(FunctionTypeRepr *type_repr, BlockStmt *body, bool is_lambda = false);
 
   /**
    * @return The function's signature.
@@ -1219,6 +1285,8 @@ class FunctionLitExpr : public Expr {
    */
   bool IsEmpty() const { return Body()->IsEmpty(); }
 
+  bool IsLambda() const { return is_lambda_; }
+
   /**
    * Is the given node a function literal? Needed as part of the custom AST RTTI infrastructure.
    * @param node The node to check.
@@ -1233,6 +1301,8 @@ class FunctionLitExpr : public Expr {
   FunctionTypeRepr *type_repr_;
   // The body of the function.
   BlockStmt *body_;
+
+  bool is_lambda_;
 };
 
 /**
@@ -1795,6 +1865,39 @@ class MapTypeRepr : public Expr {
   Expr *key_;
   // The value type.
   Expr *val_;
+};
+
+/**
+ * Map type.
+ */
+class LambdaTypeRepr : public Expr {
+ public:
+  /**
+   * Constructor
+   * @param pos source position
+   * @param key key tyoe
+   * @param val value type
+   */
+  LambdaTypeRepr(const SourcePosition &pos, Expr *fn_type)
+      : Expr(Kind::LambdaTypeRepr, pos), fn_type_(fn_type) {}
+
+  /**
+   * @return The key type of the map.
+   */
+  Expr *FunctionType() const { return fn_type_; }
+
+  /**
+   * Is the given node a map type? Needed as part of the custom AST RTTI infrastructure.
+   * @param node The node to check.
+   * @return True if the node is a map type; false otherwise.
+   */
+  static bool classof(const AstNode *node) {  // NOLINT
+    return node->GetKind() == Kind::LambdaTypeRepr;
+  }
+
+ private:
+  // The key type.
+  Expr *fn_type_;
 };
 
 /**

@@ -18,8 +18,9 @@
 namespace noisepage::execution::compiler {
 InsertTranslator::InsertTranslator(const planner::InsertPlanNode &plan, CompilationContext *compilation_context,
                                    Pipeline *pipeline)
-    : OperatorTranslator(plan, compilation_context, pipeline, selfdriving::ExecutionOperatingUnitType::INSERT),
-      inserter_(GetCodeGen()->MakeFreshIdentifier("inserter")),
+    : OperatorTranslator(plan, compilation_context, pipeline, brain::ExecutionOperatingUnitType::INSERT),
+      inserter_(pipeline->DeclarePipelineStateEntry("inserter",
+                                                    GetCodeGen()->BuiltinType(ast::BuiltinType::Kind::StorageInterface))),
       insert_pr_(GetCodeGen()->MakeFreshIdentifier("insert_pr")),
       col_oids_(GetCodeGen()->MakeFreshIdentifier("col_oids")),
       table_schema_(GetCodeGen()->GetCatalogAccessor()->GetSchema(GetPlanAs<planner::InsertPlanNode>().GetTableOid())),
@@ -29,15 +30,16 @@ InsertTranslator::InsertTranslator(const planner::InsertPlanNode &plan, Compilat
                     ->GetTable(GetPlanAs<planner::InsertPlanNode>().GetTableOid())
                     ->ProjectionMapForOids(all_oids_)) {
   pipeline->RegisterSource(this, Pipeline::Parallelism::Serial);
+  if (plan.GetChildrenSize() > 0){
+    compilation_context->Prepare(*plan.GetChild(0), pipeline);
+  }
   for (uint32_t idx = 0; idx < plan.GetBulkInsertCount(); idx++) {
     const auto &node_vals = GetPlanAs<planner::InsertPlanNode>().GetValues(idx);
     for (const auto &node_val : node_vals) {
       compilation_context->Prepare(*node_val);
     }
   }
-
-  auto &index_oids = GetPlanAs<planner::InsertPlanNode>().GetIndexOids();
-  for (auto &index_oid : index_oids) {
+  for (auto &index_oid : GetCodeGen()->GetCatalogAccessor()->GetIndexOids(plan.GetTableOid())) {
     const auto &index_schema = GetCodeGen()->GetCatalogAccessor()->GetIndexSchema(index_oid);
     for (const auto &index_col : index_schema.GetColumns()) {
       compilation_context->Prepare(*index_col.StoredExpression());
@@ -68,17 +70,18 @@ void InsertTranslator::PerformPipelineWork(WorkContext *context, FunctionBuilder
     // var insert_slot = @tableInsert(&inserter)
     GenTableInsert(function);
     function->Append(GetCodeGen()->ExecCtxAddRowsAffected(GetExecutionContext(), 1));
-    const auto &index_oids = GetPlanAs<planner::InsertPlanNode>().GetIndexOids();
+    const auto &table_oid = GetPlanAs<planner::InsertPlanNode>().GetTableOid();
+    const auto &index_oids = GetCodeGen()->GetCatalogAccessor()->GetIndexOids(table_oid);
     for (const auto &index_oid : index_oids) {
       GenIndexInsert(context, function, index_oid);
     }
   }
 
-  FeatureRecord(function, selfdriving::ExecutionOperatingUnitType::INSERT,
-                selfdriving::ExecutionOperatingUnitFeatureAttribute::NUM_ROWS, context->GetPipeline(),
+  FeatureRecord(function, brain::ExecutionOperatingUnitType::INSERT,
+                brain::ExecutionOperatingUnitFeatureAttribute::NUM_ROWS, context->GetPipeline(),
                 CounterVal(num_inserts_));
-  FeatureRecord(function, selfdriving::ExecutionOperatingUnitType::INSERT,
-                selfdriving::ExecutionOperatingUnitFeatureAttribute::CARDINALITY, context->GetPipeline(),
+  FeatureRecord(function, brain::ExecutionOperatingUnitType::INSERT,
+                brain::ExecutionOperatingUnitFeatureAttribute::CARDINALITY, context->GetPipeline(),
                 CounterVal(num_inserts_));
   FeatureArithmeticRecordMul(function, context->GetPipeline(), GetTranslatorId(), CounterVal(num_inserts_));
 
@@ -90,11 +93,10 @@ void InsertTranslator::DeclareInserter(noisepage::execution::compiler::FunctionB
   // col_oids[i] = ...
   SetOids(builder);
   // var inserter : StorageInterface
-  auto *storage_interface_type = GetCodeGen()->BuiltinType(ast::BuiltinType::Kind::StorageInterface);
-  builder->Append(GetCodeGen()->DeclareVar(inserter_, storage_interface_type, nullptr));
   // @storageInterfaceInit(inserter, execCtx, table_oid, col_oids, true)
   ast::Expr *inserter_setup = GetCodeGen()->StorageInterfaceInit(
-      inserter_, GetExecutionContext(), GetPlanAs<planner::InsertPlanNode>().GetTableOid().UnderlyingValue(), col_oids_,
+      inserter_.GetPtr(GetCodeGen()), GetExecutionContext(),
+      GetPlanAs<planner::InsertPlanNode>().GetTableOid().UnderlyingValue(), col_oids_,
       true);
   builder->Append(GetCodeGen()->MakeStmt(inserter_setup));
 }
@@ -102,7 +104,7 @@ void InsertTranslator::DeclareInserter(noisepage::execution::compiler::FunctionB
 void InsertTranslator::GenInserterFree(noisepage::execution::compiler::FunctionBuilder *builder) const {
   // Call @storageInterfaceFree
   ast::Expr *inserter_free =
-      GetCodeGen()->CallBuiltin(ast::Builtin::StorageInterfaceFree, {GetCodeGen()->AddressOf(inserter_)});
+      GetCodeGen()->CallBuiltin(ast::Builtin::StorageInterfaceFree, {inserter_.GetPtr(GetCodeGen())});
   builder->Append(GetCodeGen()->MakeStmt(inserter_free));
 }
 
@@ -141,7 +143,7 @@ void InsertTranslator::DeclareInsertPR(noisepage::execution::compiler::FunctionB
 
 void InsertTranslator::GetInsertPR(noisepage::execution::compiler::FunctionBuilder *builder) const {
   // var insert_pr = @getTablePR(&inserter)
-  auto *get_pr_call = GetCodeGen()->CallBuiltin(ast::Builtin::GetTablePR, {GetCodeGen()->AddressOf(inserter_)});
+  auto *get_pr_call = GetCodeGen()->CallBuiltin(ast::Builtin::GetTablePR, {inserter_.GetPtr(GetCodeGen())});
   builder->Append(GetCodeGen()->Assign(GetCodeGen()->MakeExpr(insert_pr_), get_pr_call));
 }
 
@@ -164,7 +166,7 @@ void InsertTranslator::GenSetTablePR(FunctionBuilder *builder, WorkContext *cont
 void InsertTranslator::GenTableInsert(FunctionBuilder *builder) const {
   // var insert_slot = @tableInsert(&inserter)
   const auto &insert_slot = GetCodeGen()->MakeFreshIdentifier("insert_slot");
-  auto *insert_call = GetCodeGen()->CallBuiltin(ast::Builtin::TableInsert, {GetCodeGen()->AddressOf(inserter_)});
+  auto *insert_call = GetCodeGen()->CallBuiltin(ast::Builtin::TableInsert, {inserter_.GetPtr(GetCodeGen())});
   builder->Append(GetCodeGen()->DeclareVar(insert_slot, nullptr, insert_call));
 
   CounterAdd(builder, num_inserts_, 1);
@@ -173,16 +175,16 @@ void InsertTranslator::GenTableInsert(FunctionBuilder *builder) const {
 void InsertTranslator::GenIndexInsert(WorkContext *context, FunctionBuilder *builder,
                                       const catalog::index_oid_t &index_oid) const {
   // var insert_index_pr = @getIndexPR(&inserter, oid)
-  const auto &insert_index_pr = GetCodeGen()->MakeFreshIdentifier("insert_index_pr");
-  std::vector<ast::Expr *> pr_call_args{GetCodeGen()->AddressOf(inserter_),
-                                        GetCodeGen()->Const32(index_oid.UnderlyingValue())};
-  auto *get_index_pr_call = GetCodeGen()->CallBuiltin(ast::Builtin::GetIndexPR, pr_call_args);
-  builder->Append(GetCodeGen()->DeclareVar(insert_index_pr, nullptr, get_index_pr_call));
+  auto codegen = GetCodeGen();
+  const auto &insert_index_pr = codegen->MakeFreshIdentifier("insert_index_pr");
+  std::vector<ast::Expr *> pr_call_args{inserter_.GetPtr(GetCodeGen()), GetCodeGen()->Const32(index_oid.UnderlyingValue())};
+  auto *get_index_pr_call = codegen->CallBuiltin(ast::Builtin::GetIndexPR, pr_call_args);
+  builder->Append(codegen->DeclareVar(insert_index_pr, nullptr, get_index_pr_call));
 
-  const auto &index = GetCodeGen()->GetCatalogAccessor()->GetIndex(index_oid);
+  const auto &index = codegen->GetCatalogAccessor()->GetIndex(index_oid);
   const auto &index_pm = index->GetKeyOidToOffsetMap();
-  const auto &index_schema = GetCodeGen()->GetCatalogAccessor()->GetIndexSchema(index_oid);
-  auto *index_pr_expr = GetCodeGen()->MakeExpr(insert_index_pr);
+  const auto &index_schema = codegen->GetCatalogAccessor()->GetIndexSchema(index_oid);
+  auto *index_pr_expr = codegen->MakeExpr(insert_index_pr);
 
   for (const auto &index_col : index_schema.GetColumns()) {
     // @prSet(insert_index_pr, attr_idx, val, true)
@@ -196,7 +198,7 @@ void InsertTranslator::GenIndexInsert(WorkContext *context, FunctionBuilder *bui
 
   // if (!@indexInsert(&inserter)) { Abort(); }
   const auto &builtin = index_schema.Unique() ? ast::Builtin::IndexInsertUnique : ast::Builtin::IndexInsert;
-  auto *index_insert_call = GetCodeGen()->CallBuiltin(builtin, {GetCodeGen()->AddressOf(inserter_)});
+  auto *index_insert_call = GetCodeGen()->CallBuiltin(builtin, {inserter_.GetPtr(GetCodeGen())});
   auto *cond = GetCodeGen()->UnaryOp(parsing::Token::Type::BANG, index_insert_call);
   If success(builder, cond);
   { builder->Append(GetCodeGen()->AbortTxn(GetExecutionContext())); }

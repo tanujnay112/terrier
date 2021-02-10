@@ -111,14 +111,14 @@ class OperatorTranslator : public ColumnValueProvider {
    * declaration container.
    * @param decls Query-level declarations.
    */
-  virtual void DefineHelperStructs(util::RegionVector<ast::StructDecl *> *decls) {}
+  virtual void DefineHelperStructs(util::RegionVector<ast::StructDecl *> *decls);
 
   /**
    * Define any helper functions required for processing. Ensure they're declared in the provided
    * declaration container.
    * @param decls Query-level declarations.
    */
-  virtual void DefineHelperFunctions(util::RegionVector<ast::FunctionDecl *> *decls) {}
+  virtual void DefineHelperFunctions(util::RegionVector<ast::FunctionDecl *> *decls);
 
   /**
    * Define any helper functions that rely on pipeline's thread local state.
@@ -254,6 +254,13 @@ class OperatorTranslator : public ColumnValueProvider {
   /** @return The address of the current tuple slot, if any. */
   virtual ast::Expr *GetSlotAddress() const { UNREACHABLE("This translator does not deal with tupleslots."); }
 
+  virtual void RegisterNeedValue(const OperatorTranslator *requester, uint32_t child_idx, uint32_t attr_idx) {
+    UNREACHABLE("not implemented");
+  }
+
+  /** The pipeline this translator is a part of. */
+  Pipeline *GetPipeline() const { return pipeline_; }
+
  protected:
   /** Get the code generator instance. */
   CodeGen *GetCodeGen() const;
@@ -269,9 +276,6 @@ class OperatorTranslator : public ColumnValueProvider {
 
   /** Get the memory pool pointer from the execution context stored in the query state. */
   ast::Expr *GetMemoryPool() const;
-
-  /** The pipeline this translator is a part of. */
-  Pipeline *GetPipeline() const { return pipeline_; }
 
   /** The plan node for this translator as its concrete type. */
   template <typename T>

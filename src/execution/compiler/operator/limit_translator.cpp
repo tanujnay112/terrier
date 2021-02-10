@@ -11,8 +11,8 @@ namespace noisepage::execution::compiler {
 
 LimitTranslator::LimitTranslator(const planner::LimitPlanNode &plan, CompilationContext *compilation_context,
                                  Pipeline *pipeline)
-    : OperatorTranslator(plan, compilation_context, pipeline, selfdriving::ExecutionOperatingUnitType::LIMIT) {
-  NOISEPAGE_ASSERT(plan.GetOffset() != 0 || plan.GetLimit() != 0, "Both offset and limit cannot be 0");
+    : OperatorTranslator(plan, compilation_context, pipeline, brain::ExecutionOperatingUnitType::LIMIT) {
+  //NOISEPAGE_ASSERT(plan.GetOffset() != 0 || plan.GetLimit() != 0, "Both offset and limit cannot be 0");
   // Limits are serial ... for now.
   pipeline->UpdateParallelism(Pipeline::Parallelism::Serial);
   // Prepare child.
@@ -38,14 +38,16 @@ void LimitTranslator::PerformPipelineWork(WorkContext *context, FunctionBuilder 
     cond = codegen->Compare(parsing::Token::Type::GREATER_EQUAL, tuple_count_.Get(codegen),
                             codegen->Const32(plan.GetOffset()));
   }
-  if (plan.GetLimit() != 0) {
+//  if (plan.GetLimit() != 0) {
     auto limit_check = codegen->Compare(parsing::Token::Type::LESS, tuple_count_.Get(codegen),
                                         codegen->Const32(plan.GetOffset() + plan.GetLimit()));
     cond = cond == nullptr ? limit_check : codegen->BinaryOp(parsing::Token::Type::AND, cond, limit_check);
-  }
+//  }
 
   If check_limit(function, cond);
   context->Push(function);
+  check_limit.Else();
+  function->Append(codegen->Break());
   check_limit.EndIf();
 
   // Update running count: numTuples += 1

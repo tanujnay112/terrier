@@ -16,6 +16,7 @@
 #include "execution/sql/functions/runners_functions.h"
 #include "execution/sql/functions/string_functions.h"
 #include "execution/sql/functions/system_functions.h"
+#include "execution/sql/ind_cte_scan_iterator.h"
 #include "execution/sql/index_iterator.h"
 #include "execution/sql/join_hash_table.h"
 #include "execution/sql/operators/hash_operators.h"
@@ -164,11 +165,17 @@ VM_OP_HOT void OpDerefN(noisepage::byte *dest, const noisepage::byte *const src,
 
 VM_OP_HOT void OpAssign1(int8_t *dest, int8_t src) { *dest = src; }
 
-VM_OP_HOT void OpAssign2(int16_t *dest, int16_t src) { *dest = src; }
+VM_OP_HOT void OpAssign2(int16_t *dest, int16_t src) {  *dest = src; }
 
 VM_OP_HOT void OpAssign4(int32_t *dest, int32_t src) { *dest = src; }
 
-VM_OP_HOT void OpAssign8(int64_t *dest, int64_t src) { *dest = src; }
+VM_OP_HOT void OpAssign8(int64_t *dest, int64_t src) {
+  *dest = src;
+}
+
+VM_OP_HOT void OpAssignN(noisepage::byte *dest, const noisepage::byte *const src, uint32_t len) {
+  std::memcpy(dest, src, len);
+}
 
 VM_OP_HOT void OpAssignImm1(int8_t *dest, int8_t src) { *dest = src; }
 
@@ -325,6 +332,57 @@ VM_OP_HOT void OpParallelScanTable(uint32_t table_oid, uint32_t *col_oids, uint3
   noisepage::execution::sql::TableVectorIterator::ParallelScan(table_oid, col_oids, num_oids, query_state, exec_ctx,
                                                                scanner);
 }
+
+// ---------------------------------------------------------
+// CTE Scan
+// ---------------------------------------------------------
+
+VM_OP void OpCteScanInit(noisepage::execution::sql::CteScanIterator *iter,
+                         noisepage::execution::exec::ExecutionContext *exec_ctx, uint32_t table_oid,
+                         uint32_t *schema_cols_ids, uint32_t *schema_cols_type, uint32_t num_schema_cols);
+
+VM_OP void OpCteScanGetTable(noisepage::storage::SqlTable **sql_table,
+                             noisepage::execution::sql::CteScanIterator *iter);
+
+VM_OP void OpCteScanGetTableOid(noisepage::catalog::table_oid_t *table_oid,
+                                noisepage::execution::sql::CteScanIterator *iter);
+
+VM_OP void OpCteScanGetInsertTempTablePR(noisepage::storage::ProjectedRow **projected_row,
+                                         noisepage::execution::sql::CteScanIterator *iter);
+VM_OP void OpCteScanTableInsert(noisepage::storage::TupleSlot *tuple_slot,
+                                noisepage::execution::sql::CteScanIterator *iter);
+VM_OP void OpCteScanFree(noisepage::execution::sql::CteScanIterator *iter);
+
+// ---------------------------------------------------------
+// Iterative CTE Scan
+// ---------------------------------------------------------
+
+VM_OP void OpIndCteScanInit(noisepage::execution::sql::IndCteScanIterator *iter,
+                            noisepage::execution::exec::ExecutionContext *exec_ctx, uint32_t table_oid,
+                            uint32_t *schema_cols_ids, uint32_t *schema_cols_type, uint32_t num_schema_cols,
+                            bool is_recursive);
+
+VM_OP void OpIndCteScanGetReadCte(noisepage::execution::sql::CteScanIterator **sql_table,
+                                  noisepage::execution::sql::IndCteScanIterator *iter);
+
+VM_OP void OpIndCteScanGetWriteCte(noisepage::execution::sql::CteScanIterator **sql_table,
+                                   noisepage::execution::sql::IndCteScanIterator *iter);
+
+VM_OP void OpIndCteScanGetReadTableOid(noisepage::catalog::table_oid_t *table_oid,
+                                       noisepage::execution::sql::IndCteScanIterator *iter);
+
+VM_OP void OpIndCteScanAccumulate(bool *accumulate_bool, noisepage::execution::sql::IndCteScanIterator *iter);
+
+VM_OP void OpIndCteScanGetInsertTempTablePR(noisepage::storage::ProjectedRow **projected_row,
+                                            noisepage::execution::sql::IndCteScanIterator *iter);
+
+VM_OP void OpIndCteScanGetResult(noisepage::execution::sql::CteScanIterator **result,
+                                 noisepage::execution::sql::IndCteScanIterator *iter);
+
+VM_OP void OpIndCteScanTableInsert(noisepage::storage::TupleSlot *tuple_slot,
+                                   noisepage::execution::sql::IndCteScanIterator *iter);
+
+VM_OP void OpIndCteScanFree(noisepage::execution::sql::IndCteScanIterator *iter);
 
 // ---------------------------------------------------------
 // Vector Projection Iterator
@@ -1364,6 +1422,9 @@ VM_OP_WARM void OpSorterIteratorSkipRows(noisepage::execution::sql::SorterIterat
 
 VM_OP void OpSorterIteratorFree(noisepage::execution::sql::SorterIterator *iter);
 
+VM_OP void OpPushParamContext(noisepage::execution::exec::ExecutionContext **new_ctx,
+                                  noisepage::execution::exec::ExecutionContext *ctx);
+
 // ---------------------------------------------------------
 // Output
 // ---------------------------------------------------------
@@ -2078,12 +2139,8 @@ VM_OP_WARM void OpAbortTxn(noisepage::execution::exec::ExecutionContext *exec_ct
 #define GEN_SCALAR_PARAM_GET(Name, SqlType)                                                                     \
   VM_OP_HOT void OpGetParam##Name(noisepage::execution::sql::SqlType *ret,                                      \
                                   noisepage::execution::exec::ExecutionContext *exec_ctx, uint32_t param_idx) { \
-    const auto &cve = exec_ctx->GetParam(param_idx);                                                            \
-    if (cve.IsNull()) {                                                                                         \
-      ret->is_null_ = true;                                                                                     \
-    } else {                                                                                                    \
-      *ret = cve.Get##SqlType();                                                                                \
-    }                                                                                                           \
+    const auto &val = *reinterpret_cast<const noisepage::execution::sql::SqlType*>(exec_ctx->GetParam(param_idx).Get());                                                            \
+    *ret = val;                                                                                                      \
   }
 
 GEN_SCALAR_PARAM_GET(Bool, BoolVal)
@@ -2097,6 +2154,33 @@ GEN_SCALAR_PARAM_GET(DateVal, DateVal)
 GEN_SCALAR_PARAM_GET(TimestampVal, TimestampVal)
 GEN_SCALAR_PARAM_GET(String, StringVal)
 #undef GEN_SCALAR_PARAM_GET
+
+// Parameter calls
+#define GEN_SCALAR_PARAM_ADD(Name, SqlType, typeId)                                                          \
+  VM_OP_HOT void OpAddParam##Name(noisepage::execution::exec::ExecutionContext *exec_ctx,              \
+                                  noisepage::execution::sql::SqlType *ret) {                           \
+    exec_ctx->AddParam(noisepage::common::ManagedPointer<noisepage::execution::sql::Val>(reinterpret_cast<noisepage::execution::sql::Val*>(ret)));                                       \
+  }
+
+GEN_SCALAR_PARAM_ADD(Bool, BoolVal, BOOLEAN)
+GEN_SCALAR_PARAM_ADD(TinyInt, Integer, TINYINT)
+GEN_SCALAR_PARAM_ADD(SmallInt, Integer, SMALLINT)
+GEN_SCALAR_PARAM_ADD(Int, Integer, INTEGER)
+GEN_SCALAR_PARAM_ADD(BigInt, Integer, BIGINT)
+GEN_SCALAR_PARAM_ADD(Real, Real, DECIMAL)
+GEN_SCALAR_PARAM_ADD(Double, Real, DECIMAL)
+GEN_SCALAR_PARAM_ADD(DateVal, DateVal, DATE)
+GEN_SCALAR_PARAM_ADD(TimestampVal, TimestampVal, TIMESTAMP)
+GEN_SCALAR_PARAM_ADD(String, StringVal, VARCHAR)
+#undef GEN_SCALAR_PARAM_ADD
+
+VM_OP_HOT void OpStartNewParams(noisepage::execution::exec::ExecutionContext *exec_ctx) {
+  exec_ctx->StartParams();
+}
+
+VM_OP_HOT void OpFinishParams(noisepage::execution::exec::ExecutionContext *exec_ctx) {
+  exec_ctx->PopParams();
+}
 
 // ---------------------------------
 // Testing only functions
@@ -2128,6 +2212,7 @@ VM_OP_WARM void OpTestCatalogIndexLookup(uint32_t *oid_var, noisepage::execution
   noisepage::execution::sql::StringVal table_name{reinterpret_cast<const char *>(index_name_str), index_name_length};
   noisepage::catalog::index_oid_t index_oid =
       exec_ctx->GetAccessor()->GetIndexOid(std::string(table_name.StringView()));
+  NOISEPAGE_ASSERT(index_oid != noisepage::catalog::INVALID_INDEX_OID, "Didn't find this index");
   *oid_var = index_oid.UnderlyingValue();
 }
 

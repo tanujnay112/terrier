@@ -17,7 +17,7 @@ namespace noisepage {
  * Update 12/8/2020: They have been disabled because they take too long in CI. They've been running on essentially the
  * same data structure for about 2 years, and we know its issues.
  */
-struct BwTreeTests : public TerrierTest {
+struct BwTreeTests : public NoisepageTest {
   const uint32_t num_threads_ =
       MultiThreadTestUtil::HardwareConcurrency() + (MultiThreadTestUtil::HardwareConcurrency() % 2);
 };

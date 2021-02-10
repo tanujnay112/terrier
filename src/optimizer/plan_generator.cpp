@@ -28,6 +28,7 @@
 #include "planner/plannodes/create_trigger_plan_node.h"
 #include "planner/plannodes/create_view_plan_node.h"
 #include "planner/plannodes/csv_scan_plan_node.h"
+#include "planner/plannodes/cte_scan_plan_node.h"
 #include "planner/plannodes/delete_plan_node.h"
 #include "planner/plannodes/drop_database_plan_node.h"
 #include "planner/plannodes/drop_index_plan_node.h"
@@ -45,6 +46,7 @@
 #include "planner/plannodes/order_by_plan_node.h"
 #include "planner/plannodes/projection_plan_node.h"
 #include "planner/plannodes/seq_scan_plan_node.h"
+#include "planner/plannodes/union_plan_node.h"
 #include "planner/plannodes/update_plan_node.h"
 #include "settings/settings_manager.h"
 #include "storage/sql_table.h"
@@ -52,8 +54,8 @@
 
 namespace noisepage::optimizer {
 
-PlanGenerator::PlanGenerator(common::ManagedPointer<planner::PlanMetaData> plan_meta_data)
-    : plan_id_counter_(0), plan_meta_data_(plan_meta_data) {}
+PlanGenerator::PlanGenerator(common::ManagedPointer<planner::PlanMetaData> plan_meta_data,LateralWaitersSet &laterals)
+    : laterals_(laterals), plan_id_counter_(0), plan_meta_data_(plan_meta_data) {}
 
 std::unique_ptr<planner::AbstractPlanNode> PlanGenerator::ConvertOpNode(
     transaction::TransactionContext *txn, catalog::CatalogAccessor *accessor, AbstractOptimizerNode *op,
@@ -104,7 +106,7 @@ void PlanGenerator::CorrectOutputPlanWithProjection() {
       // Evaluate the expression and add to target list
       auto conv_col = parser::ExpressionUtil::ConvertExprCVNodes(col, {child_expr_map});
       auto final_col =
-          parser::ExpressionUtil::EvaluateExpression(output_expr_maps, common::ManagedPointer(conv_col.get()));
+          parser::ExpressionUtil::EvaluateExpression(output_expr_maps, common::ManagedPointer(conv_col.get()), laterals_);
       columns.emplace_back(col->GetExpressionName(), col->GetReturnValueType(), std::move(final_col));
     }
   }
@@ -308,7 +310,8 @@ void PlanGenerator::Visit(const QueryDerivedScan *op) {
     auto colve = output.CastManagedPointerTo<parser::ColumnValueExpression>();
 
     // Get offset into child_expr_ma
-    auto expr = alias_expr_map.at(colve->GetColumnName());
+    auto expr = alias_expr_map.at(colve->GetAlias().IsSerialNoValid() ? colve->GetAlias()
+                                                                      : parser::AliasType(colve->GetColumnName()));
     auto offset = child_expr_map.at(expr);
 
     auto dve = std::make_unique<parser::DerivedValueExpression>(colve->GetReturnValueType(), 0, offset);
@@ -321,6 +324,24 @@ void PlanGenerator::Visit(const QueryDerivedScan *op) {
                      .SetOutputSchema(std::move(schema))
                      .AddChild(std::move(children_plans_[0]))
                      .Build();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Union
+///////////////////////////////////////////////////////////////////////////////
+void PlanGenerator::Visit(const Union *op) {
+  NOISEPAGE_ASSERT(children_plans_.size() == 2, "Union needs 2 children");
+  std::vector<planner::OutputSchema::Column> columns;
+  size_t i = 0;
+  for(auto &col : output_cols_){
+    std::unique_ptr<parser::AbstractExpression> dve = std::make_unique<parser::DerivedValueExpression>(col->GetReturnValueType(), 0, i++);
+    columns.emplace_back(col->GetAliasName(), col->GetReturnValueType(), std::move(dve));
+  }
+  output_plan_ = planner::UnionPlanNode::Builder()
+                     .SetOutputSchema(std::make_unique<planner::OutputSchema>(std::move(columns)))
+                  .AddChild(std::move(children_plans_[0]))
+                  .AddChild(std::move(children_plans_[1]))
+                  .Build();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -369,7 +390,7 @@ void PlanGenerator::Visit(const Limit *op) {
 
       // Evaluate the sort_column using children_expr_map (what the child provides)
       // Need to replace ColumnValueExpression with DerivedValueExpression
-      auto eval_expr = parser::ExpressionUtil::EvaluateExpression({child_cols_map}, sort_columns[i]).release();
+      auto eval_expr = parser::ExpressionUtil::EvaluateExpression({child_cols_map}, sort_columns[i], laterals_).release();
       RegisterPointerCleanup<parser::AbstractExpression>(eval_expr, true, true);
       order_build.AddSortKey(common::ManagedPointer(eval_expr), sort_flags[i]);
     }
@@ -438,7 +459,7 @@ void PlanGenerator::Visit(UNUSED_ATTRIBUTE const OrderBy *op) {
 
     // Evaluate the sort_column using children_expr_map (what the child provides)
     // Need to replace ColumnValueExpression with DerivedValueExpression
-    auto eval_expr = parser::ExpressionUtil::EvaluateExpression({child_cols_map}, key).release();
+    auto eval_expr = parser::ExpressionUtil::EvaluateExpression({child_cols_map}, key, laterals_).release();
     RegisterPointerCleanup<parser::AbstractExpression>(eval_expr, true, true);
     builder.AddSortKey(common::ManagedPointer(eval_expr), sort_dir);
   }
@@ -485,7 +506,7 @@ std::unique_ptr<planner::OutputSchema> PlanGenerator::GenerateProjectionForJoin(
       auto dve = std::make_unique<parser::DerivedValueExpression>(type, 1, r_child_expr_map[expr]);
       columns.emplace_back(expr->GetExpressionName(), type, std::move(dve));
     } else {
-      auto eval = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, expr);
+      auto eval = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, expr, laterals_);
       columns.emplace_back(expr->GetExpressionName(), type, std::move(eval));
     }
   }
@@ -508,14 +529,14 @@ void PlanGenerator::Visit(const InnerIndexJoin *op) {
       auto dve = std::make_unique<parser::DerivedValueExpression>(type, 0, children_expr_map_[0][expr]);
       columns.emplace_back(expr->GetExpressionName(), type, std::move(dve));
     } else {
-      auto eval = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, expr);
+      auto eval = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, expr, laterals_);
       columns.emplace_back(expr->GetExpressionName(), type, std::move(eval));
     }
   }
 
   auto proj_schema = std::make_unique<planner::OutputSchema>(std::move(columns));
   auto comb_pred = parser::ExpressionUtil::JoinAnnotatedExprs(op->GetJoinPredicates());
-  auto eval_pred = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, common::ManagedPointer(comb_pred));
+  auto eval_pred = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, common::ManagedPointer(comb_pred), laterals_);
   auto join_predicate =
       parser::ExpressionUtil::ConvertExprCVNodes(common::ManagedPointer(eval_pred), children_expr_map_).release();
   RegisterPointerCleanup<parser::AbstractExpression>(join_predicate, true, true);
@@ -532,18 +553,19 @@ void PlanGenerator::Visit(const InnerIndexJoin *op) {
       .SetIndexSize(accessor_->GetTable(op->GetTableOID())->GetNumTuple())
       .AddChild(std::move(children_plans_[0]));
 
+  size_t i = 0;
   for (auto bound : op->GetJoinKeys()) {
     if (type == planner::IndexScanType::Exact) {
       // Exact lookup
-      auto key = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, bound.second[0]).release();
+      auto key = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, bound.second[0], laterals_).release();
       RegisterPointerCleanup<parser::AbstractExpression>(key, true, true);
 
       builder.AddLoIndexColumn(bound.first, common::ManagedPointer(key));
       builder.AddHiIndexColumn(bound.first, common::ManagedPointer(key));
     } else if (type == planner::IndexScanType::AscendingClosed) {
       // Range lookup, so use lo and hi
-      auto lkey = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, bound.second[0]).release();
-      auto hkey = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, bound.second[1]).release();
+      auto lkey = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, bound.second[0], laterals_).release();
+      auto hkey = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, bound.second[1], laterals_).release();
       RegisterPointerCleanup<parser::AbstractExpression>(lkey, true, true);
       RegisterPointerCleanup<parser::AbstractExpression>(hkey, true, true);
 
@@ -551,18 +573,24 @@ void PlanGenerator::Visit(const InnerIndexJoin *op) {
       builder.AddHiIndexColumn(bound.first, common::ManagedPointer(hkey));
     } else if (type == planner::IndexScanType::AscendingOpenHigh) {
       // Open high scan, so use only lo
-      auto key = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, bound.second[0]).release();
+      auto key = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, bound.second[0], laterals_).release();
       RegisterPointerCleanup<parser::AbstractExpression>(key, true, true);
       builder.AddLoIndexColumn(bound.first, common::ManagedPointer(key));
+
+      // hack until we figure out compound index key
+      if(op->GetJoinPredicates()[i].GetExpr()->GetExpressionType() == parser::ExpressionType::COMPARE_EQUAL){
+        builder.AddHiIndexColumn(bound.first, common::ManagedPointer(key));
+      }
     } else if (type == planner::IndexScanType::AscendingOpenLow) {
       // Open low scan, so use only high
-      auto key = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, bound.second[1]).release();
+      auto key = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, bound.second[1], laterals_).release();
       RegisterPointerCleanup<parser::AbstractExpression>(key, true, true);
       builder.AddHiIndexColumn(bound.first, common::ManagedPointer(key));
     } else if (type == planner::IndexScanType::AscendingOpenBoth) {
       // No bounds need to be set
       NOISEPAGE_ASSERT(0, "Unreachable");
     }
+    i++;
   }
 
   output_plan_ = builder.Build();
@@ -576,10 +604,11 @@ void PlanGenerator::Visit(const InnerNLJoin *op) {
   auto proj_schema = GenerateProjectionForJoin();
 
   auto comb_pred = parser::ExpressionUtil::JoinAnnotatedExprs(op->GetJoinPredicates());
-  auto eval_pred = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, common::ManagedPointer(comb_pred));
+  auto eval_pred = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, common::ManagedPointer(comb_pred), laterals_);
   auto join_predicate =
       parser::ExpressionUtil::ConvertExprCVNodes(common::ManagedPointer(eval_pred), children_expr_map_).release();
   RegisterPointerCleanup<parser::AbstractExpression>(join_predicate, true, true);
+
 
   output_plan_ = planner::NestedLoopJoinPlanNode::Builder()
                      .SetOutputSchema(std::move(proj_schema))
@@ -589,6 +618,13 @@ void PlanGenerator::Visit(const InnerNLJoin *op) {
                      .AddChild(std::move(children_plans_[0]))
                      .AddChild(std::move(children_plans_[1]))
                      .Build();
+
+  for(auto lateral_oid : op->GetLateralOids()){
+    for(auto expr : laterals_[lateral_oid].second) {
+      expr->source_plan_ = output_plan_;
+    }
+    laterals_.erase(lateral_oid);
+  }
 }
 
 void PlanGenerator::Visit(UNUSED_ATTRIBUTE const LeftNLJoin *op) { NOISEPAGE_ASSERT(0, "LeftNLJoin not implemented"); }
@@ -610,7 +646,7 @@ void PlanGenerator::Visit(const InnerHashJoin *op) {
 
   auto comb_pred = parser::ExpressionUtil::JoinAnnotatedExprs(op->GetJoinPredicates());
   auto eval_pred =
-      parser::ExpressionUtil::EvaluateExpression(children_expr_map_, common::ManagedPointer(comb_pred.get()));
+      parser::ExpressionUtil::EvaluateExpression(children_expr_map_, common::ManagedPointer(comb_pred.get()), laterals_);
   auto join_predicate =
       parser::ExpressionUtil::ConvertExprCVNodes(common::ManagedPointer(eval_pred.get()), children_expr_map_).release();
   RegisterPointerCleanup<parser::AbstractExpression>(join_predicate, true, true);
@@ -620,13 +656,13 @@ void PlanGenerator::Visit(const InnerHashJoin *op) {
   builder.SetPlanNodeId(GetNextPlanNodeID());
 
   for (auto &expr : op->GetLeftKeys()) {
-    auto left_key = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, expr).release();
+    auto left_key = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, expr, laterals_).release();
     RegisterPointerCleanup<parser::AbstractExpression>(left_key, true, true);
     builder.AddLeftHashKey(common::ManagedPointer(left_key));
   }
 
   for (auto &expr : op->GetRightKeys()) {
-    auto right_key = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, expr).release();
+    auto right_key = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, expr, laterals_).release();
     RegisterPointerCleanup<parser::AbstractExpression>(right_key, true, true);
     builder.AddRightHashKey(common::ManagedPointer(right_key));
   }
@@ -636,6 +672,13 @@ void PlanGenerator::Visit(const InnerHashJoin *op) {
   builder.SetJoinPredicate(common::ManagedPointer(join_predicate));
   builder.SetJoinType(planner::LogicalJoinType::INNER);
   output_plan_ = builder.Build();
+
+  for(auto lateral_oid : op->GetLateralOids()){
+    for(auto expr : laterals_[lateral_oid].second) {
+      expr->source_plan_ = output_plan_;
+    }
+    laterals_.erase(lateral_oid);
+  }
 }
 
 void PlanGenerator::Visit(const LeftHashJoin *op) {
@@ -643,7 +686,7 @@ void PlanGenerator::Visit(const LeftHashJoin *op) {
 
   auto comb_pred = parser::ExpressionUtil::JoinAnnotatedExprs(op->GetJoinPredicates());
   auto eval_pred =
-      parser::ExpressionUtil::EvaluateExpression(children_expr_map_, common::ManagedPointer(comb_pred.get()));
+      parser::ExpressionUtil::EvaluateExpression(children_expr_map_, common::ManagedPointer(comb_pred.get()), laterals_);
   auto join_predicate =
       parser::ExpressionUtil::ConvertExprCVNodes(common::ManagedPointer(eval_pred.get()), children_expr_map_).release();
   RegisterPointerCleanup<parser::AbstractExpression>(join_predicate, true, true);
@@ -653,13 +696,13 @@ void PlanGenerator::Visit(const LeftHashJoin *op) {
   builder.SetPlanNodeId(GetNextPlanNodeID());
 
   for (auto &expr : op->GetLeftKeys()) {
-    auto left_key = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, expr).release();
+    auto left_key = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, expr, laterals_).release();
     RegisterPointerCleanup<parser::AbstractExpression>(left_key, true, true);
     builder.AddLeftHashKey(common::ManagedPointer(left_key));
   }
 
   for (auto &expr : op->GetRightKeys()) {
-    auto right_key = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, expr).release();
+    auto right_key = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, expr, laterals_).release();
     RegisterPointerCleanup<parser::AbstractExpression>(right_key, true, true);
     builder.AddRightHashKey(common::ManagedPointer(right_key));
   }
@@ -669,6 +712,13 @@ void PlanGenerator::Visit(const LeftHashJoin *op) {
   builder.SetJoinPredicate(common::ManagedPointer(join_predicate));
   builder.SetJoinType(planner::LogicalJoinType::LEFT);
   output_plan_ = builder.Build();
+
+  for(auto lateral_oid : op->GetLateralOids()){
+    for(auto expr : laterals_[lateral_oid].second) {
+      expr->source_plan_ = output_plan_;
+    }
+    laterals_.erase(lateral_oid);
+  }
 }
 
 void PlanGenerator::Visit(UNUSED_ATTRIBUTE const RightHashJoin *op) {
@@ -688,7 +738,7 @@ void PlanGenerator::Visit(const LeftSemiHashJoin *op) {
 
   auto comb_pred = parser::ExpressionUtil::JoinAnnotatedExprs(op->GetJoinPredicates());
   auto eval_pred =
-      parser::ExpressionUtil::EvaluateExpression(children_expr_map_, common::ManagedPointer(comb_pred.get()));
+      parser::ExpressionUtil::EvaluateExpression(children_expr_map_, common::ManagedPointer(comb_pred.get()), laterals_);
   auto join_predicate =
       parser::ExpressionUtil::ConvertExprCVNodes(common::ManagedPointer(eval_pred.get()), children_expr_map_).release();
   RegisterPointerCleanup<parser::AbstractExpression>(join_predicate, true, true);
@@ -698,13 +748,13 @@ void PlanGenerator::Visit(const LeftSemiHashJoin *op) {
   builder.SetPlanNodeId(GetNextPlanNodeID());
 
   for (auto &expr : op->GetLeftKeys()) {
-    auto left_key = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, expr).release();
+    auto left_key = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, expr, laterals_).release();
     RegisterPointerCleanup<parser::AbstractExpression>(left_key, true, true);
     builder.AddLeftHashKey(common::ManagedPointer(left_key));
   }
 
   for (auto &expr : op->GetRightKeys()) {
-    auto right_key = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, expr).release();
+    auto right_key = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, expr, laterals_).release();
     RegisterPointerCleanup<parser::AbstractExpression>(right_key, true, true);
     builder.AddRightHashKey(common::ManagedPointer(right_key));
   }
@@ -735,7 +785,7 @@ void PlanGenerator::BuildAggregatePlan(
     for (auto &col : *groupby_cols) {
       gb_map[col] = offset;
 
-      auto eval = parser::ExpressionUtil::EvaluateExpression({child_expr_map}, col);
+      auto eval = parser::ExpressionUtil::EvaluateExpression({child_expr_map}, col, laterals_);
       auto gb_term =
           parser::ExpressionUtil::ConvertExprCVNodes(common::ManagedPointer(eval), {child_expr_map}).release();
       RegisterPointerCleanup<parser::AbstractExpression>(gb_term, true, true);
@@ -759,7 +809,7 @@ void PlanGenerator::BuildAggregatePlan(
     if (parser::ExpressionUtil::IsAggregateExpression(expr->GetExpressionType())) {
       agg_output_expr_map[expr] = static_cast<unsigned>(agg_id);
       // We need to evaluate the expression first, convert ColumnValue => DerivedValue
-      auto eval = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, expr).release();
+      auto eval = parser::ExpressionUtil::EvaluateExpression(children_expr_map_, expr, laterals_).release();
       NOISEPAGE_ASSERT(parser::ExpressionUtil::IsAggregateExpression(eval->GetExpressionType()),
                        "Evaluated AggregateExpression should still be an aggregate expression");
 
@@ -782,7 +832,7 @@ void PlanGenerator::BuildAggregatePlan(
 
   // Prepare having clause
   auto eval_have =
-      parser::ExpressionUtil::EvaluateExpression({gb_output_expr_map, agg_output_expr_map}, having_predicate);
+      parser::ExpressionUtil::EvaluateExpression({gb_output_expr_map, agg_output_expr_map}, having_predicate, laterals_);
   auto predicate = parser::ExpressionUtil::ConvertExprCVNodes(common::ManagedPointer(eval_have),
                                                               {gb_output_expr_map, agg_output_expr_map})
                        .release();
@@ -858,6 +908,8 @@ void PlanGenerator::Visit(const InsertSelect *op) {
                      .SetTableOid(op->GetTableOid())
                      .SetIndexOids(std::move(indexes))
                      .AddChild(std::move(children_plans_[0]))
+                     .SetIndexOids(std::move(indexes))
+                     .AddValues(std::move(values))
                      .Build();
 }
 
@@ -1133,6 +1185,92 @@ void PlanGenerator::Visit(const Analyze *analyze) {
                      .SetTableOid(analyze->GetTableOid())
                      .SetColumnOIDs(analyze->GetColumns())
                      .Build();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// CTE
+///////////////////////////////////////////////////////////////////////////////
+
+void PlanGenerator::Visit(const CteScan *cte_scan) {
+  // CteScan has the same output schema as the child plan!
+  NOISEPAGE_ASSERT(children_plans_.size() <= 2, "CteScan needs at most 2 child plans");
+  auto predicate = parser::ExpressionUtil::JoinAnnotatedExprs(cte_scan->GetScanPredicate()).release();
+  RegisterPointerCleanup<parser::AbstractExpression>(predicate, true, true);
+  if (!children_plans_.empty()) {
+    output_plan_ = std::move(children_plans_[0]);
+    // CteScan OutputSchema does not add/drop columns. All output columns of CteScan
+    // are the same as the output columns of the child plan. As such, the OutputSchema
+    // of a CteScan has the same columns vector as the child OutputSchema, with only
+    // DerivedValueExpressions
+    auto idx = 0;
+    auto &child_plan_cols = output_plan_->GetOutputSchema()->GetColumns();
+    std::vector<planner::OutputSchema::Column> child_columns;
+    // A copy of child_columns maintained to create an identical output schema to be
+    // passed on to a child of the current CTE node (the recursive read in recursive/
+    // iterative CTEs)
+    std::vector<planner::OutputSchema::Column> inner_columns;
+    for (auto &col : child_plan_cols) {
+      auto dve = std::make_unique<parser::DerivedValueExpression>(col.GetType(), 0, idx);
+      // Made a second version to avoid ownership issues
+      auto dve_copy = std::make_unique<parser::DerivedValueExpression>(col.GetType(), 0, idx);
+      child_columns.emplace_back(col.GetName(), col.GetType(), std::move(dve));
+      inner_columns.emplace_back(col.GetName(), col.GetType(), std::move(dve_copy));
+      idx++;
+    }
+
+    std::vector<planner::OutputSchema::Column> columns;
+    for (auto &output_expr : output_cols_) {
+      auto tve = output_expr.CastManagedPointerTo<parser::ColumnValueExpression>();
+
+      // output schema of a plan node is literally the columns of the table.
+      // there is no such thing as an intermediate column here!
+      columns.emplace_back(tve->GetColumnName(), tve->GetReturnValueType(), tve->Copy());
+    }
+
+    auto cte_scan_out = std::make_unique<planner::OutputSchema>(std::move(child_columns));
+    (void)cte_scan_out;
+    if (children_plans_.size() == 2) {
+      output_plan_ = planner::CteScanPlanNode::Builder()
+                         .SetOutputSchema(std::make_unique<planner::OutputSchema>(std::move(columns)))
+                         .SetTableSchema(cte_scan->GetTableSchema())
+                         .SetTableOid(cte_scan->GetTableOid())
+                         .SetCTEType(cte_scan->GetCTEType())
+                         .AddChild(std::move(output_plan_))
+                         .AddChild(std::move(children_plans_[1]))
+                         .SetCTETableName(std::string(cte_scan->GetTableName()))
+                         .SetScanPredicate(common::ManagedPointer<parser::AbstractExpression>(predicate))
+                         .Build();
+    } else {
+      output_plan_ = planner::CteScanPlanNode::Builder()
+                         .SetOutputSchema(std::make_unique<planner::OutputSchema>(std::move(columns)))
+                         .SetTableSchema(cte_scan->GetTableSchema())
+                         .SetTableOid(cte_scan->GetTableOid())
+                         .SetCTEType(cte_scan->GetCTEType())
+                         .AddChild(std::move(output_plan_))
+                         .SetCTETableName(std::string(cte_scan->GetTableName()))
+                         .SetScanPredicate(common::ManagedPointer<parser::AbstractExpression>(predicate))
+                         .Build();
+    }
+  } else {
+    // make schema from output columns
+    std::vector<planner::OutputSchema::Column> columns;
+    for (auto &output_expr : output_cols_) {
+      auto tve = output_expr.CastManagedPointerTo<parser::ColumnValueExpression>();
+
+      // output schema of a plan node is literally the columns of the table.
+      // there is no such thing as an intermediate column here!
+      columns.emplace_back(tve->GetColumnName(), tve->GetReturnValueType(), tve->Copy());
+    }
+
+    output_plan_ = planner::CteScanPlanNode::Builder()
+                       .SetOutputSchema(std::make_unique<planner::OutputSchema>(std::move(columns)))
+                       .SetTableSchema(cte_scan->GetTableSchema())
+                       .SetTableOid(cte_scan->GetTableOid())
+                       .SetCTEType(cte_scan->GetCTEType())
+                       .SetCTETableName(std::string(cte_scan->GetTableName()))
+                       .SetScanPredicate(common::ManagedPointer<parser::AbstractExpression>(predicate))
+                       .Build();
+  }
 }
 
 }  // namespace noisepage::optimizer

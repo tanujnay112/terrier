@@ -11,6 +11,7 @@
 #include "common/managed_pointer.h"
 #include "common/strong_typedef.h"
 #include "parser/expression/abstract_expression.h"
+#include "parser/expression/lateral_value_expression.h"
 #include "parser/expression_defs.h"
 
 namespace noisepage::optimizer {
@@ -80,6 +81,8 @@ enum class OpType {
   LOGICALDROPTRIGGER,
   LOGICALDROPVIEW,
   LOGICALANALYZE,
+  LOGICALCTESCAN,
+  LOGICALUNION,
   // Separation of logical and physical operators
   LOGICALPHYSICALDELIMITER,
 
@@ -123,7 +126,9 @@ enum class OpType {
   DROPFUNCTION,
   DROPTRIGGER,
   DROPVIEW,
-  ANALYZE
+  ANALYZE,
+  CTESCAN,
+  UNION
 };
 
 /**
@@ -255,5 +260,13 @@ using ExprMap =
  * (checking whether an AbstractExpression already exists in a collection).
  */
 using ExprSet = std::unordered_set<common::ManagedPointer<parser::AbstractExpression>, ExprHasher, ExprEqualCmp>;
+
+using LateralWaitersSet = std::unordered_map<catalog::table_oid_t,
+                                             std::pair<ExprMap, std::vector<common::ManagedPointer<parser::LateralValueExpression>>>>;
+
+using UnionAliasMap = std::pair<std::unordered_map<parser::AliasType,
+                                                   common::ManagedPointer<parser::AbstractExpression>, parser::AliasType::HashKey>,
+                                std::unordered_map<parser::AliasType,
+                                                   common::ManagedPointer<parser::AbstractExpression>, parser::AliasType::HashKey>>;
 
 }  // namespace noisepage::optimizer

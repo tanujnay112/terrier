@@ -66,6 +66,8 @@ class BytecodeEmitter {
    */
   void EmitAssign(Bytecode bytecode, LocalVar dest, LocalVar src);
 
+  void EmitAssignN(LocalVar dest, LocalVar src, uint32_t len);
+
   /**
    * Emit assignment code for 1 byte values.
    * @param dest destination variable
@@ -166,6 +168,8 @@ class BytecodeEmitter {
    * @param params parameters of the function
    */
   void EmitCall(FunctionId func_id, const std::vector<LocalVar> &params);
+
+  std::function<void(FunctionId)> DeferedEmitCall(const std::vector<LocalVar> &params);
 
   /**
    * Emit a return bytecode
@@ -319,6 +323,9 @@ class BytecodeEmitter {
   void EmitTableIterInit(Bytecode bytecode, LocalVar iter, LocalVar exec_ctx, LocalVar table_oid, LocalVar col_oids,
                          uint32_t num_oids);
 
+  /** Emit an initialization of a TVI on a temporary table */
+  void EmitTempTableIterInit(Bytecode bytecode, LocalVar iter, LocalVar exec_ctx, LocalVar col_oids, uint32_t num_oids);
+
   /** Emit a parallel table scan. */
   void EmitParallelTableScan(LocalVar table_oid, LocalVar col_oids, uint32_t num_oids, LocalVar query_state,
                              LocalVar exec_ctx, FunctionId scan_fn);
@@ -359,8 +366,66 @@ class BytecodeEmitter {
   void EmitTestCatalogLookup(LocalVar oid_var, LocalVar exec_ctx, LocalVar table_name, uint32_t table_name_len,
                              LocalVar col_name, uint32_t col_name_len);
 
+  /*Cte Scan Calls*/
+
+  /**
+   * Emit code to initialize a CTE scan iterator
+   * @param bytecode cte scan iterator initialization bytecode
+   * @param iter iterator to initialize
+   * @param exec_ctx the execution context
+   * @param table_oid the temp table oid of this table
+   * @param col_oids the temp column oids of this cte table
+   * @param col_types an array of types of the columns
+   * @param num_oids number of columns in the cte table
+   */
+  void EmitCteScanIteratorInit(Bytecode bytecode, LocalVar iter, LocalVar exec_ctx, LocalVar table_oid,
+                               LocalVar col_oids, LocalVar col_types, uint32_t num_oids);
+
+  /**
+   * Emit code to initialize an inductive CTE scan iterator
+   * @param bytecode index initialization bytecode
+   * @param iter iterator in initialize
+   * @param exec_ctx the execution context
+   * @param table_oid The temp table oid of the cte
+   * @param col_oids column oids
+   * @param col_types an array of the types of each column in the cte table
+   * @param num_oids length of the array
+   * @param is_recursive whether the inductive CTE is recursive
+   */
+  void EmitIndCteScanIteratorInit(Bytecode bytecode, LocalVar iter, LocalVar exec_ctx, LocalVar table_oid,
+                                  LocalVar col_oids, LocalVar col_types, uint32_t num_oids, bool is_recursive);
+
   /** ONLY FOR TESTING! */
   void EmitTestCatalogIndexLookup(LocalVar oid_var, LocalVar exec_ctx, LocalVar table_name, uint32_t table_name_len);
+
+  /*Cte Scan Calls*/
+
+  /**
+   * Emit code to initialize a CTE scan iterator
+   * @param bytecode index initialization bytecode
+   * @param iter iterator in initialize
+   * @param exec_ctx the execution context
+   * @param col_oids column oids
+   * @param num_oids length of the array
+   */
+  void EmitCteScanIteratorInit(Bytecode bytecode, LocalVar iter, LocalVar exec_ctx, LocalVar col_oids,
+                               uint32_t num_oids);
+
+  /**
+   * Emit code to initialize an inductive CTE scan iterator
+   * @param bytecode index initialization bytecode
+   * @param iter iterator in initialize
+   * @param exec_ctx the execution context
+   * @param col_oids column oids
+   * @param num_oids length of the array
+   * @param is_recursive whether the inductive CTE is recursive
+   */
+  void EmitIndCteScanIteratorInit(Bytecode bytecode, LocalVar iter, LocalVar exec_ctx, LocalVar col_oids,
+                                  uint32_t num_oids, bool is_recursive);
+
+  // -------------------------------------------
+  // Index Calls
+  // -------------------------------------------
 
   /**
    * Emit code to initialize an index iterator
@@ -422,6 +487,11 @@ class BytecodeEmitter {
   auto EmitScalarValue(const T val) -> std::enable_if_t<std::is_arithmetic_v<T>> {
     bytecode_->insert(bytecode_->end(), sizeof(T), 0);
     *reinterpret_cast<T *>(&*(bytecode_->end() - sizeof(T))) = val;
+  }
+
+  template <typename T>
+  auto EmitScalarValue(const T val, size_t index) -> std::enable_if_t<std::is_arithmetic_v<T>> {
+    *reinterpret_cast<T *>(&*(bytecode_->begin() + index)) = val;
   }
 
   /** Emit a bytecode */

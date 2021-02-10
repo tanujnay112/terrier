@@ -27,6 +27,8 @@ class Update;
 class HashGroupBy;
 class SortGroupBy;
 class Aggregate;
+class CteScan;
+class Union;
 class ExportExternalFile;
 class CreateDatabase;
 class CreateFunction;
@@ -55,6 +57,7 @@ class LogicalLeftJoin;
 class LogicalRightJoin;
 class LogicalOuterJoin;
 class LogicalSemiJoin;
+class LogicalUnion;
 class LogicalAggregateAndGroupBy;
 class LogicalInsert;
 class LogicalInsertSelect;
@@ -76,6 +79,7 @@ class LogicalDropNamespace;
 class LogicalDropTrigger;
 class LogicalDropView;
 class LogicalAnalyze;
+class LogicalCteScan;
 
 /**
  * Utility class for visitor pattern
@@ -121,9 +125,15 @@ class OperatorVisitor {
   virtual void Visit(const QueryDerivedScan *query_derived_scan) {}
 
   /**
-   * Visit a OrderBy operator
-   * @param order_by operator
+   * Visit a Union operator
+   * @param union operator
    */
+  virtual void Visit(const Union *union_op) {}
+
+  /**
+  * Visit a OrderBy operator
+  * @param order_by operator
+  */
   virtual void Visit(const OrderBy *order_by) {}
 
   /**
@@ -322,6 +332,12 @@ class OperatorVisitor {
    * @param analyze operator
    */
   virtual void Visit(const Analyze *analyze) {}
+
+  /**
+   * Visit a CteScan operator
+   * @param cte_scan operator
+   */
+  virtual void Visit(const CteScan *cte_scan) {}
 
   /**
    * Visit a LogicalGet operator
@@ -526,6 +542,18 @@ class OperatorVisitor {
    * @param logical_analyze operator
    */
   virtual void Visit(const LogicalAnalyze *logical_analyze) {}
+
+  /**
+   * Visit a LogicalCteScan operator
+   * @param logical_cte_scan operator
+   */
+  virtual void Visit(const LogicalCteScan *logical_cte_scan) {}
+
+  /**
+   * Visit a LogicalUnion operator
+   * @param logical_union a logicalunion operator
+   */
+  virtual void Visit(const LogicalUnion *logical_union) {}
 };
 
 }  // namespace noisepage::optimizer

@@ -190,7 +190,8 @@ void LogicalQueryDerivedGetToPhysicalQueryDerivedScan::Transform(
   const auto get = input->Contents()->GetContentsAs<LogicalQueryDerivedGet>();
 
   auto tbl_alias = std::string(get->GetTableAlias());
-  std::unordered_map<std::string, common::ManagedPointer<parser::AbstractExpression>> expr_map;
+  std::unordered_map<parser::AliasType, common::ManagedPointer<parser::AbstractExpression>, parser::AliasType::HashKey>
+      expr_map;
   expr_map = get->GetAliasToExprMap();
 
   auto input_child = input->GetChildren()[0];
@@ -369,6 +370,44 @@ void LogicalInsertSelectToPhysicalInsertSelect::Transform(
                                                .RegisterWithTxnContext(context->GetOptimizerContext()->GetTxn()),
                                            std::move(c), context->GetOptimizerContext()->GetTxn());
   transformed->emplace_back(std::move(op));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+/// LogicalUnionToPhysicalUnion
+///////////////////////////////////////////////////////////////////////////////
+LogicalUnionToPhysicalUnion::LogicalUnionToPhysicalUnion() {
+  type_ = RuleType::UNION_TO_PHYSICAL;
+  match_pattern_ = new Pattern(OpType::LOGICALUNION);
+
+  auto child = new Pattern(OpType::LEAF);
+  auto child2 = new Pattern(OpType::LEAF);
+  match_pattern_->AddChild(child);
+  match_pattern_->AddChild(child2);
+}
+
+bool LogicalUnionToPhysicalUnion::Check(common::ManagedPointer<AbstractOptimizerNode> plan,
+                                                             OptimizationContext *context) const {
+  (void)context;
+  (void)plan;
+  return true;
+}
+
+void LogicalUnionToPhysicalUnion::Transform(
+    common::ManagedPointer<AbstractOptimizerNode> input,
+    std::vector<std::unique_ptr<AbstractOptimizerNode>> *transformed,
+    UNUSED_ATTRIBUTE OptimizationContext *context) const {
+
+  auto child1 = input->GetChildren()[0];
+  auto child2 = input->GetChildren()[1];
+  std::vector<std::unique_ptr<AbstractOptimizerNode>> c;
+  c.emplace_back(child1->Copy());
+  c.emplace_back(child2->Copy());
+  auto union_contents = input->Contents()->GetContentsAs<LogicalUnion>();
+
+  auto result_plan = std::make_unique<OperatorNode>(Union::Make(union_contents->GetColumns()).RegisterWithTxnContext(
+                                                        context->GetOptimizerContext()->GetTxn()), std::move(c),
+                                                    context->GetOptimizerContext()->GetTxn());
+  transformed->emplace_back(std::move(result_plan));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -559,8 +598,9 @@ void LogicalInnerJoinToPhysicalInnerNLJoin::Transform(common::ManagedPointer<Abs
   std::vector<std::unique_ptr<AbstractOptimizerNode>> child;
   child.emplace_back(children[0]->Copy());
   child.emplace_back(children[1]->Copy());
+  std::vector<catalog::table_oid_t> lateral_oids = inner_join->GetLateralOids();
   auto result = std::make_unique<OperatorNode>(
-      InnerNLJoin::Make(std::move(join_preds)).RegisterWithTxnContext(context->GetOptimizerContext()->GetTxn()),
+      InnerNLJoin::Make(std::move(join_preds), std::move(lateral_oids)).RegisterWithTxnContext(context->GetOptimizerContext()->GetTxn()),
       std::move(child), context->GetOptimizerContext()->GetTxn());
   transformed->emplace_back(std::move(result));
 }
@@ -614,8 +654,10 @@ void LogicalInnerJoinToPhysicalInnerHashJoin::Transform(
   child.emplace_back(children[0]->Copy());
   child.emplace_back(children[1]->Copy());
   if (!left_keys.empty()) {
+    auto lateral_oids = inner_join->GetLateralOids();
     auto result = std::make_unique<OperatorNode>(
-        InnerHashJoin::Make(std::move(join_preds), std::move(left_keys), std::move(right_keys))
+        InnerHashJoin::Make(std::move(join_preds), std::move(left_keys), std::move(right_keys),
+                            std::move(lateral_oids))
             .RegisterWithTxnContext(context->GetOptimizerContext()->GetTxn()),
         std::move(child), context->GetOptimizerContext()->GetTxn());
     transformed->emplace_back(std::move(result));
@@ -728,9 +770,11 @@ void LogicalLeftJoinToPhysicalLeftHashJoin::Transform(common::ManagedPointer<Abs
   std::vector<std::unique_ptr<AbstractOptimizerNode>> child;
   child.emplace_back(children[0]->Copy());
   child.emplace_back(children[1]->Copy());
+
+  std::vector<catalog::table_oid_t> laterals = left_join->GetLateralOids();
   if (!left_keys.empty()) {
     auto result = std::make_unique<OperatorNode>(
-        LeftHashJoin::Make(std::move(join_preds), std::move(left_keys), std::move(right_keys))
+        LeftHashJoin::Make(std::move(join_preds), std::move(left_keys), std::move(right_keys), std::move(laterals))
             .RegisterWithTxnContext(context->GetOptimizerContext()->GetTxn()),
         std::move(child), context->GetOptimizerContext()->GetTxn());
     transformed->emplace_back(std::move(result));
@@ -1201,6 +1245,121 @@ void LogicalAnalyzeToPhysicalAnalyze::Transform(common::ManagedPointer<AbstractO
       std::vector<std::unique_ptr<AbstractOptimizerNode>>(), context->GetOptimizerContext()->GetTxn());
 
   transformed->emplace_back(std::move(op));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+/// LogicalCteScanToPhysicalCteScanIterative
+///////////////////////////////////////////////////////////////////////////////
+LogicalCteScanToPhysicalCteScanIterative::LogicalCteScanToPhysicalCteScanIterative() {
+  type_ = RuleType::CTESCAN_TO_PHYSICAL;
+
+  match_pattern_ = new Pattern(OpType::LOGICALCTESCAN);
+  match_pattern_->AddChild(new Pattern(OpType::LEAF));
+  match_pattern_->AddChild(new Pattern(OpType::LEAF));
+}
+
+bool LogicalCteScanToPhysicalCteScanIterative::Check(common::ManagedPointer<AbstractOptimizerNode> plan,
+                                                     OptimizationContext *context) const {
+  (void)context;
+  (void)plan;
+  return true;
+}
+
+void LogicalCteScanToPhysicalCteScanIterative::Transform(
+    common::ManagedPointer<AbstractOptimizerNode> input,
+    std::vector<std::unique_ptr<AbstractOptimizerNode>> *transformed, OptimizationContext *context) const {
+  (void)context;
+  NOISEPAGE_ASSERT(input->GetChildren().size() == 2, "LogicalCteScan should have 2 children");
+
+  std::vector<std::unique_ptr<AbstractOptimizerNode>> c;
+  auto child1 = input->GetChildren()[0]->Copy();
+  c.emplace_back(std::move(child1));
+  auto child2 = input->GetChildren()[1]->Copy();
+  c.emplace_back(std::move(child2));
+
+  auto logical_op = input->Contents()->GetContentsAs<LogicalCteScan>();
+
+  NOISEPAGE_ASSERT(logical_op->GetIsInductive(), "LogicalCteScan should be iterative");
+
+  auto result_plan = std::make_unique<OperatorNode>(
+      CteScan::Make(logical_op->GetExpressions(), std::string(logical_op->GetTableAlias()), logical_op->GetTableOid(),
+                    logical_op->GetCTEType(), logical_op->GetScanPredicate(),
+                    catalog::Schema(logical_op->GetTableSchema()))
+          .RegisterWithTxnContext(context->GetOptimizerContext()->GetTxn()),
+      std::move(c), context->GetOptimizerContext()->GetTxn());
+  transformed->emplace_back(std::move(result_plan));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+/// LogicalCteScanToPhysicalCteScan
+///////////////////////////////////////////////////////////////////////////////
+LogicalCteScanToPhysicalCteScan::LogicalCteScanToPhysicalCteScan() {
+  type_ = RuleType::CTESCAN_TO_PHYSICAL;
+
+  match_pattern_ = new Pattern(OpType::LOGICALCTESCAN);
+  match_pattern_->AddChild(new Pattern(OpType::LEAF));
+}
+
+bool LogicalCteScanToPhysicalCteScan::Check(common::ManagedPointer<AbstractOptimizerNode> plan,
+                                            OptimizationContext *context) const {
+  (void)context;
+  (void)plan;
+  return true;
+}
+
+void LogicalCteScanToPhysicalCteScan::Transform(common::ManagedPointer<AbstractOptimizerNode> input,
+                                                std::vector<std::unique_ptr<AbstractOptimizerNode>> *transformed,
+                                                OptimizationContext *context) const {
+  (void)context;
+  NOISEPAGE_ASSERT(input->GetChildren().size() == 1, "LogicalCteScan should have 1 child");
+
+  std::vector<std::unique_ptr<AbstractOptimizerNode>> c;
+  auto child = input->GetChildren()[0]->Copy();
+  c.emplace_back(std::move(child));
+
+  auto logical_op = input->Contents()->GetContentsAs<LogicalCteScan>();
+
+  auto result_plan = std::make_unique<OperatorNode>(
+      CteScan::Make(logical_op->GetExpressions(), std::string(logical_op->GetTableName()), logical_op->GetTableOid(),
+                    logical_op->GetCTEType(), logical_op->GetScanPredicate(),
+                    catalog::Schema(logical_op->GetTableSchema()))
+          .RegisterWithTxnContext(context->GetOptimizerContext()->GetTxn()),
+      std::move(c), context->GetOptimizerContext()->GetTxn());
+  transformed->emplace_back(std::move(result_plan));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+/// LogicalCteScanToPhysicalEmptyCteScan
+///////////////////////////////////////////////////////////////////////////////
+LogicalCteScanToPhysicalEmptyCteScan::LogicalCteScanToPhysicalEmptyCteScan() {
+  type_ = RuleType::CTESCAN_TO_PHYSICAL_EMPTY;
+
+  match_pattern_ = new Pattern(OpType::LOGICALCTESCAN);
+}
+
+bool LogicalCteScanToPhysicalEmptyCteScan::Check(common::ManagedPointer<AbstractOptimizerNode> plan,
+                                                 OptimizationContext *context) const {
+  (void)context;
+  (void)plan;
+  return true;
+}
+
+void LogicalCteScanToPhysicalEmptyCteScan::Transform(common::ManagedPointer<AbstractOptimizerNode> input,
+                                                     std::vector<std::unique_ptr<AbstractOptimizerNode>> *transformed,
+                                                     OptimizationContext *context) const {
+  (void)context;
+  NOISEPAGE_ASSERT(input->GetChildren().empty(), "EmptyLogicalCteScan should have 0 child");
+
+  std::vector<std::unique_ptr<AbstractOptimizerNode>> c;
+  auto logical_op = input->Contents()->GetContentsAs<LogicalCteScan>();
+
+  auto result_plan = std::make_unique<OperatorNode>(
+      CteScan::Make(logical_op->GetExpressions(), std::string(logical_op->GetTableAlias()), logical_op->GetTableOid(),
+                    logical_op->GetCTEType(), logical_op->GetScanPredicate(),
+                    catalog::Schema(logical_op->GetTableSchema())),
+      std::move(c), context->GetOptimizerContext()->GetTxn());
+
+  transformed->emplace_back(std::move(result_plan));
 }
 
 }  // namespace noisepage::optimizer

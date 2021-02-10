@@ -10,6 +10,7 @@
 #include "execution/ast/ast_fwd.h"
 #include "execution/exec_defs.h"
 #include "execution/vm/vm_defs.h"
+#include "state_descriptor.h"
 
 namespace noisepage {
 namespace selfdriving {
@@ -68,7 +69,7 @@ class ExecutableQuery {
      * @param module The module that contains the functions.
      */
     Fragment(std::vector<std::string> &&functions, std::vector<std::string> &&teardown_fns,
-             std::unique_ptr<vm::Module> module);
+             std::unique_ptr<vm::Module> module, ast::File *file);
 
     /**
      * Destructor.
@@ -87,6 +88,10 @@ class ExecutableQuery {
      */
     bool IsCompiled() const { return module_ != nullptr; }
 
+    const std::vector<std::string> &GetFunctions() const { return functions_; }
+
+    ast::File *GetFile() { return file_; };
+
    private:
     // The functions that must be run (in the provided order) to execute this
     // query fragment.
@@ -96,6 +101,8 @@ class ExecutableQuery {
 
     // The module.
     std::unique_ptr<vm::Module> module_;
+
+    ast::File *file_;
   };
 
   /**
@@ -103,7 +110,8 @@ class ExecutableQuery {
    * @param plan The physical plan.
    * @param exec_settings The execution settings used for this query.
    */
-  ExecutableQuery(const planner::AbstractPlanNode &plan, const exec::ExecutionSettings &exec_settings);
+  ExecutableQuery(const planner::AbstractPlanNode &plan, const exec::ExecutionSettings &exec_settings,
+                  ast::Context *context = nullptr);
 
   /**
    * This class cannot be copied or moved.
@@ -142,7 +150,7 @@ class ExecutableQuery {
   /**
    * @return The AST context.
    */
-  ast::Context *GetContext() { return ast_context_.get(); }
+  ast::Context *GetContext() { return ast_context_; }
 
   /** @return The execution settings used for this query. */
   const exec::ExecutionSettings &GetExecutionSettings() const { return exec_settings_; }
@@ -155,11 +163,32 @@ class ExecutableQuery {
   /** @return The Query Identifier */
   query_id_t GetQueryId() { return query_id_; }
 
+  void SetQueryStateType(ast::StructDecl * query_state_type){
+    query_state_type_ = query_state_type;
+  }
+
+  ast::StructDecl *GetQueryStateType() const {
+    return query_state_type_;
+  }
+
   /** @param query_text The SQL string for this query */
   void SetQueryText(common::ManagedPointer<const std::string> query_text) { query_text_ = query_text; }
 
   /** @return The SQL query string */
   common::ManagedPointer<const std::string> GetQueryText() { return query_text_; }
+
+  const std::vector<std::string> GetFunctions() const {
+
+    // TODO(tanujnay112) string copying, figure out smth better
+    std::vector<std::string> ret;
+    for(auto &f : fragments_){
+      auto fns = f->GetFunctions();
+      ret.insert(ret.end(), fns.begin(), fns.end());
+    }
+    return ret;
+  }
+
+  std::vector<ast::Decl *> GetDecls() const;
 
  private:
   // The plan.
@@ -171,11 +200,14 @@ class ExecutableQuery {
   // The AST error reporter.
   std::unique_ptr<sema::ErrorReporter> errors_;
   // The AST context used to generate the TPL AST.
-  std::unique_ptr<ast::Context> ast_context_;
+  ast::Context *ast_context_;
+  bool owned{true};
   // The compiled query fragments that make up the query.
   std::vector<std::unique_ptr<Fragment>> fragments_;
   // The query state size.
   std::size_t query_state_size_;
+
+  ast::StructDecl *query_state_type_;
 
   // The pipeline operating units that were generated as part of this query.
   std::unique_ptr<selfdriving::PipelineOperatingUnits> pipeline_operating_units_;
@@ -184,7 +216,8 @@ class ExecutableQuery {
 
   /** Legacy constructor that creates a hardcoded fragment with main(ExecutionContext*)->int32. */
   ExecutableQuery(const std::string &contents, common::ManagedPointer<exec::ExecutionContext> exec_ctx, bool is_file,
-                  size_t query_state_size, const exec::ExecutionSettings &exec_settings);
+                  size_t query_state_size, const exec::ExecutionSettings &exec_settings,
+                  ast::Context *context = nullptr);
   /**
    * Set Pipeline Operating Units for use by mini_runners
    * @param units Pipeline Operating Units

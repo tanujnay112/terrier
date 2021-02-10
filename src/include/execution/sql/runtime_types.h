@@ -19,7 +19,7 @@ static constexpr int64_t K_MICRO_SECONDS_PER_DAY = 24UL * K_MICRO_SECONDS_PER_HO
 /** A SQL date. */
 class EXPORT Date {
  public:
-  /**
+  /**Date
    * The internal representation of a SQL date.
    */
   using NativeType = int32_t;

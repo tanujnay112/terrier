@@ -45,6 +45,11 @@ class AstNodeFactory {
     return new (region_) FunctionDecl(pos, name, fun);
   }
 
+  LambdaExpr *NewLambdaExpr(const SourcePosition &pos, FunctionLitExpr *fun,
+                            util::RegionVector<ast::Expr*> &&captures) {
+    return new (region_) LambdaExpr(pos, fun, std::move(captures));
+  }
+
   /**
    * @param pos source position
    * @param name struct name
@@ -132,6 +137,8 @@ class AstNodeFactory {
   IfStmt *NewIfStmt(const SourcePosition &pos, Expr *cond, BlockStmt *then_stmt, Stmt *else_stmt) {
     return new (region_) IfStmt(pos, cond, then_stmt, else_stmt);
   }
+
+  BreakStmt *NewBreakStmt(const SourcePosition &pos) { return new (region_) BreakStmt(pos); }
 
   /**
    * @param pos source position
@@ -335,6 +342,10 @@ class AstNodeFactory {
    */
   MapTypeRepr *NewMapType(const SourcePosition &pos, Expr *key_type, Expr *val_type) {
     return new (region_) MapTypeRepr(pos, key_type, val_type);
+  }
+
+  LambdaTypeRepr *NewLambdaType(const SourcePosition &pos, Expr *fn_type) {
+    return new (region_) LambdaTypeRepr(pos, fn_type);
   }
 
  private:

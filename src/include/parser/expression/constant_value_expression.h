@@ -101,8 +101,8 @@ class ConstantValueExpression : public AbstractExpression {
   }
 
   void DeriveExpressionName() override {
-    if (!this->GetAlias().empty()) {
-      this->SetExpressionName(this->GetAlias());
+    if (!this->GetAliasName().empty()) {
+      this->SetExpressionName(this->GetAliasName());
     }
   }
 
@@ -120,6 +120,10 @@ class ConstantValueExpression : public AbstractExpression {
   execution::sql::Integer GetInteger() const {
     NOISEPAGE_ASSERT(std::holds_alternative<execution::sql::Integer>(value_), "Invalid variant type for Get.");
     return std::get<execution::sql::Integer>(value_);
+  }
+
+  common::ManagedPointer<const execution::sql::Val> GetVal() const {
+    return common::ManagedPointer<const execution::sql::Val>(&std::get<execution::sql::Val>(value_));
   }
 
   /**
@@ -226,6 +230,8 @@ class ConstantValueExpression : public AbstractExpression {
    */
   template <typename T>
   T Peek() const;
+
+  const execution::sql::Val *PeekPtr() const;
 
   void Accept(common::ManagedPointer<binder::SqlNodeVisitor> v) override;
 

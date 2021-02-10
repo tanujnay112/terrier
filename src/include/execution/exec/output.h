@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdio>
 #include <memory>
 #include <sstream>
 #include <unordered_map>
@@ -8,6 +9,7 @@
 #include <vector>
 
 #include "catalog/catalog_defs.h"
+//#include "common/shared_latch.h"
 #include "execution/sql/memory_pool.h"
 #include "execution/util/execution_common.h"
 #include "network/network_defs.h"
@@ -88,7 +90,8 @@ class EXPORT OutputBuffer {
 
  private:
   sql::MemoryPool *memory_pool_;
-  uint32_t num_tuples_;
+//  common::SharedLatch latch_;
+  std::atomic<uint32_t> num_tuples_;
   uint32_t tuple_size_;
   byte *tuples_;
 

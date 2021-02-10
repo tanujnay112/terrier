@@ -71,9 +71,12 @@ enum class PlanNodeType {
   ORDERBY,
   PROJECTION,
   LIMIT,
+  CTESCAN,
+  CTESCANLEADER,
   DISTINCT,
   HASH,
   SETOP,
+  UNION,
 
   // Utility
   EXPORT_EXTERNAL_FILE,

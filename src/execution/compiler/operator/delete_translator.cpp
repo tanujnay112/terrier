@@ -68,7 +68,7 @@ void DeleteTranslator::DeclareDeleter(FunctionBuilder *builder) const {
   builder->Append(GetCodeGen()->DeclareVarNoInit(deleter_, storage_interface_type));
   // @storageInterfaceInit(&deleter, execCtx, table_oid, col_oids, true)
   const auto &op = GetPlanAs<planner::DeletePlanNode>();
-  ast::Expr *deleter_setup = GetCodeGen()->StorageInterfaceInit(deleter_, GetExecutionContext(),
+  ast::Expr *deleter_setup = GetCodeGen()->StorageInterfaceInit(GetCodeGen()->AddressOf(deleter_), GetExecutionContext(),
                                                                 op.GetTableOid().UnderlyingValue(), col_oids_, true);
   builder->Append(GetCodeGen()->MakeStmt(deleter_setup));
 }

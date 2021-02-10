@@ -14,7 +14,7 @@
 
 namespace noisepage::trafficcop {
 
-class TrafficCopTests : public TerrierTest {
+class TrafficCopTests : public NoisepageTest {
  protected:
   void StartServer(const bool wal_async_commit_enable) {
     std::unordered_map<settings::Param, settings::ParamInfo> param_map;

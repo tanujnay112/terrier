@@ -7,9 +7,15 @@
 
 #include "common/strong_typedef.h"
 #include "execution/ast/identifier.h"
+#include "execution/sql/cte_scan_iterator.h"
+#include "execution/sql/ind_cte_scan_iterator.h"
 #include "execution/sql/storage_interface.h"
 #include "execution/util/region.h"
 #include "execution/util/region_containers.h"
+
+namespace noisepage::execution::sema {
+class Sema;
+}  // namespace sema
 
 namespace noisepage::execution::ast {
 
@@ -20,7 +26,9 @@ class Context;
   F(BuiltinType)     \
   F(StringType)      \
   F(PointerType)     \
+  F(ReferenceType)   \
   F(ArrayType)       \
+  F(LambdaType)      \
   F(MapType)         \
   F(StructType)      \
   F(FunctionType)
@@ -77,6 +85,10 @@ class Context;
   NON_PRIM(VectorProjection, noisepage::execution::sql::VectorProjection)                         \
   NON_PRIM(VectorProjectionIterator, noisepage::execution::sql::VectorProjectionIterator)         \
   NON_PRIM(IndexIterator, noisepage::execution::sql::IndexIterator)                               \
+  NON_PRIM(CteScanIterator, noisepage::execution::sql::CteScanIterator)                           \
+  NON_PRIM(IndCteScanIterator, noisepage::execution::sql::IndCteScanIterator)                     \
+  NON_PRIM(SqlTable, noisepage::storage::SqlTable)                                                \
+  NON_PRIM(TableOid, noisepage::catalog::table_oid_t)                                             \
                                                                                                   \
   /* SQL Aggregate types (if you add, remember to update BuiltinType) */                          \
   NON_PRIM(CountAggregate, noisepage::execution::sql::CountAggregate)                             \
@@ -110,7 +122,7 @@ class Context;
 // Ignore a builtin
 #define IGNORE_BUILTIN_TYPE (...)
 
-// Only consider the primitive builtin types
+// Only consider the primitive builtin typesTableIterAdvance
 #define PRIMITIVE_BUILTIN_TYPE_LIST(F) BUILTIN_TYPE_LIST(F, IGNORE_BUILTIN_TYPE, IGNORE_BUILTIN_TYPE)
 
 // Only consider the non-primitive builtin types
@@ -292,6 +304,8 @@ class Type : public util::RegionObject {
    * @return A new type that is a pointer to the current type.
    */
   PointerType *PointerTo();
+
+  ReferenceType *ReferenceTo();
 
   /**
    * @return If this is a pointer type, the type of the element pointed to. Returns null otherwise.
@@ -484,6 +498,34 @@ class PointerType : public Type {
   Type *base_;
 };
 
+class ReferenceType : public Type {
+ public:
+  /**
+   * @return base type
+   */
+  Type *GetBase() const { return base_; }
+
+  /**
+   * Static Constructor
+   * @param base type
+   * @return pointer to base type
+   */
+  static ReferenceType *Get(Type *base);
+
+  /**
+   * @param type checked type
+   * @return whether type is a pointer type.
+   */
+  static bool classof(const Type *type) { return type->GetTypeId() == TypeId::ReferenceType; }  // NOLINT
+
+ private:
+  explicit ReferenceType(Type *base)
+  : Type(base->GetContext(), sizeof(int8_t *), alignof(int8_t *), TypeId::ReferenceType), base_(base) {}
+
+ private:
+  Type *base_;
+};
+
 /**
  * Array type.
  */
@@ -586,13 +628,24 @@ class FunctionType : public Type {
    */
   Type *GetReturnType() const { return ret_; }
 
+  bool IsEqual(const FunctionType *other);
+
+  bool IsLambda() const { return is_lambda_; }
+
+  ast::StructType *GetCapturesType() const {
+    NOISEPAGE_ASSERT(is_lambda_, "Getting capture type from not lambda");
+    return captures_;
+  }
+
+  void RegisterCapture();
+
   /**
    * Create a function with parameters @em params and returning types of type @em ret.
    * @param params The parameters to the function.
    * @param ret The type of the object the function returns.
    * @return The function type.
    */
-  static FunctionType *Get(util::RegionVector<Field> &&params, Type *ret);
+  static FunctionType *Get(util::RegionVector<Field> &&params, Type *ret, bool is_lambda);
 
   /**
    * @param type type to compare with
@@ -601,11 +654,14 @@ class FunctionType : public Type {
   static bool classof(const Type *type) { return type->GetTypeId() == TypeId::FunctionType; }  // NOLINT
 
  private:
-  explicit FunctionType(util::RegionVector<Field> &&params, Type *ret);
+  explicit FunctionType(util::RegionVector<Field> &&params, Type *ret, bool is_lambda);
 
  private:
+  friend class noisepage::execution::sema::Sema;
   util::RegionVector<Field> params_;
   Type *ret_;
+  bool is_lambda_;
+  ast::StructType *captures_{nullptr};
 };
 
 /**
@@ -643,6 +699,34 @@ class MapType : public Type {
  private:
   Type *key_type_;
   Type *val_type_;
+};
+
+class LambdaType : public Type {
+ public:
+  /**
+   * @return The types of the keys to the map.
+   */
+  FunctionType *GetFunctionType() const { return fn_type_; }
+
+  /**
+   * Create a map type storing keys of type @em key_type and values of type @em value_type.
+   * @param key_type The types of the key.
+   * @param value_type The types of the value.
+   * @return The map type.
+   */
+  static LambdaType *Get(FunctionType *fn_type);
+
+  /**
+   * @param type to compare with
+   * @return whether type is of map type.
+   */
+  static bool classof(const Type *type) { return type->GetTypeId() == TypeId::LambdaType; }  // NOLINT
+
+ private:
+  LambdaType(FunctionType *fn_type);
+
+ private:
+  FunctionType *fn_type_;
 };
 
 /**
@@ -752,6 +836,12 @@ inline Type *Type::GetPointeeType() const {
   }
   return nullptr;
 }
+
+//inline Type *Type::GetReferenceType() const {
+//  if (auto *ref_type = SafeAs<ReferenceType>>()){
+//    return re
+//  }
+//}
 
 inline bool Type::IsSpecificBuiltin(uint16_t kind) const {
   if (auto *builtin_type = SafeAs<BuiltinType>()) {

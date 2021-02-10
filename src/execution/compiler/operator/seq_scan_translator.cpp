@@ -8,6 +8,7 @@
 #include "execution/compiler/function_builder.h"
 #include "execution/compiler/if.h"
 #include "execution/compiler/loop.h"
+#include "execution/compiler/operator/cte_scan_translator.h"
 #include "execution/compiler/pipeline.h"
 #include "execution/compiler/work_context.h"
 #include "parser/expression/column_value_expression.h"
@@ -30,6 +31,7 @@ SeqScanTranslator::SeqScanTranslator(const planner::SeqScanPlanNode &plan, Compi
   pipeline->RegisterSource(this, Pipeline::Parallelism::Parallel);
   // If there's a predicate, prepare the expression and register a filter manager.
   if (HasPredicate()) {
+    compilation_context->SetCurrentOp(this);
     compilation_context->Prepare(*plan.GetScanPredicate());
 
     ast::Expr *fm_type = GetCodeGen()->BuiltinType(ast::BuiltinType::FilterManager);
@@ -41,6 +43,10 @@ SeqScanTranslator::SeqScanTranslator(const planner::SeqScanPlanNode &plan, Compi
 
 bool SeqScanTranslator::HasPredicate() const {
   return GetPlanAs<planner::SeqScanPlanNode>().GetScanPredicate() != nullptr;
+}
+
+catalog::Schema SeqScanTranslator::GetPlanSchema() const {
+  return GetCodeGen()->GetCatalogAccessor()->GetSchema(GetPlanAs<planner::SeqScanPlanNode>().GetTableOid());
 }
 
 catalog::table_oid_t SeqScanTranslator::GetTableOid() const {
@@ -331,9 +337,18 @@ void SeqScanTranslator::LaunchWork(FunctionBuilder *function, ast::Identifier wo
 }
 
 ast::Expr *SeqScanTranslator::GetTableColumn(catalog::col_oid_t col_oid) const {
-  const auto &schema = GetCodeGen()->GetCatalogAccessor()->GetSchema(GetTableOid());
-  auto type = schema.GetColumn(col_oid).Type();
-  auto nullable = schema.GetColumn(col_oid).Nullable();
+  type::TypeId type;
+  bool nullable;
+  if (catalog::IsTempOid(GetTableOid())) {
+    const auto &schema = *GetPlanAs<planner::CteScanPlanNode>().GetTableSchema();
+    type = schema.GetColumn(col_oid).Type();
+    nullable = schema.GetColumn(col_oid).Nullable();
+  } else {
+    const auto &schema = GetCodeGen()->GetCatalogAccessor()->GetSchema(GetTableOid());
+    type = schema.GetColumn(col_oid).Type();
+    nullable = schema.GetColumn(col_oid).Nullable();
+  }
+
   auto col_index = GetColOidIndex(col_oid);
   return GetCodeGen()->VPIGet(GetCodeGen()->MakeExpr(vpi_var_), sql::GetTypeId(type), nullable, col_index);
 }

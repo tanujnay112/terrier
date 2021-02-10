@@ -432,10 +432,122 @@ proc_oid_t DatabaseCatalog::CreateProcedure(common::ManagedPointer<transaction::
                                             type_oid_t rettype, const std::string &src, bool is_aggregate) {
   if (!TryLock(txn)) return INVALID_PROC_OID;
   proc_oid_t oid = proc_oid_t{next_oid_++};
-  return pg_proc_.CreateProcedure(txn, oid, procname, language_oid, procns, args, arg_types, all_arg_types, arg_modes,
-                                  rettype, src, is_aggregate)
-             ? oid
-             : INVALID_PROC_OID;
+  auto result = CreateProcedure(txn, oid, procname, language_oid, procns, args, arg_types, all_arg_types, arg_modes,
+                                rettype, src, is_aggregate);
+  return result ? oid : INVALID_PROC_OID;
+}
+
+bool DatabaseCatalog::CreateProcedure(const common::ManagedPointer<transaction::TransactionContext> txn, proc_oid_t oid,
+                                      const std::string &procname, language_oid_t language_oid, namespace_oid_t procns,
+                                      const std::vector<std::string> &args, const std::vector<type_oid_t> &arg_types,
+                                      const std::vector<type_oid_t> &all_arg_types,
+                                      const std::vector<postgres::ProArgModes> &arg_modes, type_oid_t rettype,
+                                      const std::string &src, bool is_aggregate) {
+  NOISEPAGE_ASSERT(args.size() < UINT16_MAX, "Number of arguments must fit in a SMALLINT");
+
+  // Insert into table
+  if (!TryLock(txn)) return false;
+  const auto name_varlen = storage::StorageUtil::CreateVarlen(procname);
+
+  std::vector<std::string> arg_name_vec;
+//  arg_name_vec.reserve(args.size() * sizeof(storage::VarlenEntry));
+
+  for (auto &arg : args) {
+    arg_name_vec.push_back(arg);
+  }
+
+  const auto arg_names_varlen = storage::StorageUtil::CreateVarlen(arg_name_vec);
+  const auto arg_types_varlen = storage::StorageUtil::CreateVarlen(arg_types);
+  const auto all_arg_types_varlen = storage::StorageUtil::CreateVarlen(all_arg_types);
+  const auto arg_modes_varlen = storage::StorageUtil::CreateVarlen(arg_modes);
+  const auto src_varlen = storage::StorageUtil::CreateVarlen(src);
+
+  auto *const redo = txn->StageWrite(db_oid_, postgres::PRO_TABLE_OID, pg_proc_all_cols_pri_);
+  *(reinterpret_cast<storage::VarlenEntry *>(
+      redo->Delta()->AccessForceNotNull(pg_proc_all_cols_prm_[postgres::PRONAME_COL_OID]))) = name_varlen;
+  *(reinterpret_cast<storage::VarlenEntry *>(
+      redo->Delta()->AccessForceNotNull(pg_proc_all_cols_prm_[postgres::PROARGNAMES_COL_OID]))) = arg_names_varlen;
+  *(reinterpret_cast<storage::VarlenEntry *>(
+      redo->Delta()->AccessForceNotNull(pg_proc_all_cols_prm_[postgres::PROARGTYPES_COL_OID]))) = arg_types_varlen;
+  *(reinterpret_cast<storage::VarlenEntry *>(redo->Delta()->AccessForceNotNull(
+      pg_proc_all_cols_prm_[postgres::PROALLARGTYPES_COL_OID]))) = all_arg_types_varlen;
+  *(reinterpret_cast<storage::VarlenEntry *>(
+      redo->Delta()->AccessForceNotNull(pg_proc_all_cols_prm_[postgres::PROARGMODES_COL_OID]))) = arg_modes_varlen;
+  *(reinterpret_cast<storage::VarlenEntry *>(
+      redo->Delta()->AccessForceNotNull(pg_proc_all_cols_prm_[postgres::PROSRC_COL_OID]))) = src_varlen;
+
+  *(reinterpret_cast<proc_oid_t *>(
+      redo->Delta()->AccessForceNotNull(pg_proc_all_cols_prm_[postgres::PROOID_COL_OID]))) = oid;
+  *(reinterpret_cast<language_oid_t *>(
+      redo->Delta()->AccessForceNotNull(pg_proc_all_cols_prm_[postgres::PROLANG_COL_OID]))) = language_oid;
+  *(reinterpret_cast<namespace_oid_t *>(
+      redo->Delta()->AccessForceNotNull(pg_proc_all_cols_prm_[postgres::PRONAMESPACE_COL_OID]))) = procns;
+  *(reinterpret_cast<type_oid_t *>(
+      redo->Delta()->AccessForceNotNull(pg_proc_all_cols_prm_[postgres::PRORETTYPE_COL_OID]))) = rettype;
+
+  *(reinterpret_cast<uint16_t *>(redo->Delta()->AccessForceNotNull(
+      pg_proc_all_cols_prm_[postgres::PRONARGS_COL_OID]))) = static_cast<uint16_t>(args.size());
+
+  // setting zero default args
+  *(reinterpret_cast<uint16_t *>(
+      redo->Delta()->AccessForceNotNull(pg_proc_all_cols_prm_[postgres::PRONARGDEFAULTS_COL_OID]))) = 0;
+  redo->Delta()->SetNull(pg_proc_all_cols_prm_[postgres::PROARGDEFAULTS_COL_OID]);
+
+  *reinterpret_cast<bool *>(redo->Delta()->AccessForceNotNull(pg_proc_all_cols_prm_[postgres::PROISAGG_COL_OID])) =
+      is_aggregate;
+
+  // setting defaults of unexposed attributes
+  // proiswindow, proisstrict, provolatile, provariadic, prorows, procost, proconfig
+
+  // postgres documentation says this should be 0 if no variadics are there
+  *(reinterpret_cast<type_oid_t *>(
+      redo->Delta()->AccessForceNotNull(pg_proc_all_cols_prm_[postgres::PROVARIADIC_COL_OID]))) = type_oid_t{0};
+
+  *(reinterpret_cast<bool *>(redo->Delta()->AccessForceNotNull(pg_proc_all_cols_prm_[postgres::PROISWINDOW_COL_OID]))) =
+      false;
+
+  // stable by default
+  *(reinterpret_cast<char *>(redo->Delta()->AccessForceNotNull(pg_proc_all_cols_prm_[postgres::PROVOLATILE_COL_OID]))) =
+      's';
+
+  // strict by default
+  *(reinterpret_cast<bool *>(redo->Delta()->AccessForceNotNull(pg_proc_all_cols_prm_[postgres::PROISSTRICT_COL_OID]))) =
+      true;
+
+  *(reinterpret_cast<double *>(redo->Delta()->AccessForceNotNull(pg_proc_all_cols_prm_[postgres::PROROWS_COL_OID]))) =
+      0;
+
+  *(reinterpret_cast<double *>(redo->Delta()->AccessForceNotNull(pg_proc_all_cols_prm_[postgres::PROCOST_COL_OID]))) =
+      0;
+
+  redo->Delta()->SetNull(pg_proc_all_cols_prm_[postgres::PROCONFIG_COL_OID]);
+  redo->Delta()->SetNull(pg_proc_all_cols_prm_[postgres::PRO_CTX_PTR_COL_OID]);
+
+  const auto tuple_slot = procs_->Insert(txn, redo);
+
+  auto oid_pri = procs_oid_index_->GetProjectedRowInitializer();
+  auto name_pri = procs_name_index_->GetProjectedRowInitializer();
+
+  byte *const buffer = common::AllocationUtil::AllocateAligned(name_pri.ProjectedRowSize());
+  auto name_pr = name_pri.InitializeRow(buffer);
+  auto name_map = procs_name_index_->GetKeyOidToOffsetMap();
+  *(reinterpret_cast<namespace_oid_t *>(name_pr->AccessForceNotNull(name_map[indexkeycol_oid_t(1)]))) = procns;
+  *(reinterpret_cast<storage::VarlenEntry *>(name_pr->AccessForceNotNull(name_map[indexkeycol_oid_t(2)]))) =
+      name_varlen;
+
+  auto result = procs_name_index_->Insert(txn, *name_pr, tuple_slot);
+  if (!result) {
+    delete[] buffer;
+    return false;
+  }
+
+  auto oid_pr = oid_pri.InitializeRow(buffer);
+  *(reinterpret_cast<proc_oid_t *>(oid_pr->AccessForceNotNull(0))) = oid;
+  result = procs_oid_index_->InsertUnique(txn, *oid_pr, tuple_slot);
+  NOISEPAGE_ASSERT(result, "Oid insertion should be unique");
+
+  delete[] buffer;
+  return true;
 }
 
 bool DatabaseCatalog::DropProcedure(const common::ManagedPointer<transaction::TransactionContext> txn,

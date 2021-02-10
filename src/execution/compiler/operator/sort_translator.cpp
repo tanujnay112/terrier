@@ -21,7 +21,8 @@ SortTranslator::SortTranslator(const planner::OrderByPlanNode &plan, Compilation
                                Pipeline *pipeline)
     : OperatorTranslator(plan, compilation_context, pipeline, selfdriving::ExecutionOperatingUnitType::DUMMY),
       sort_row_var_(GetCodeGen()->MakeFreshIdentifier("sortRow")),
-      sort_row_type_(GetCodeGen()->MakeFreshIdentifier("SortRow")),
+      sort_row_type_(GetCodeGen()->MakeFreshIdentifier("SortRow" + std::to_string(compilation_context
+                                                                                      ->GetQueryId().UnderlyingValue()))),
       lhs_row_(GetCodeGen()->MakeIdentifier("lhs")),
       rhs_row_(GetCodeGen()->MakeIdentifier("rhs")),
       compare_func_(GetCodeGen()->MakeFreshIdentifier(pipeline->CreatePipelineFunctionName("Compare"))),
@@ -39,6 +40,7 @@ SortTranslator::SortTranslator(const planner::OrderByPlanNode &plan, Compilation
   compilation_context->Prepare(*plan.GetChild(0), &build_pipeline_);
 
   // Prepare the sort-key expressions.
+  compilation_context->SetCurrentOp(this);
   for (const auto &[expr, _] : plan.GetSortKeys()) {
     (void)_;
     compilation_context->Prepare(*expr);

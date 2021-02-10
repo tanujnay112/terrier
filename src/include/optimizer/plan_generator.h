@@ -53,7 +53,7 @@ class PlanGenerator : public OperatorVisitor {
   /**
    * Constructor
    */
-  explicit PlanGenerator(common::ManagedPointer<planner::PlanMetaData> plan_meta_data);
+  explicit PlanGenerator(common::ManagedPointer<planner::PlanMetaData> plan_meta_data, LateralWaitersSet &laterals);
 
   /**
    * Converts an operator node into a plan node.
@@ -117,6 +117,12 @@ class PlanGenerator : public OperatorVisitor {
    * @param op Limit operator being visited
    */
   void Visit(const Limit *op) override;
+
+  /**
+   * Visitor function for a Union operator
+   * @param op Union operator being visited
+   */
+  void Visit(const Union *op) override;
 
   /**
    * Visitor function for a InnerIndexJoin operator
@@ -309,6 +315,12 @@ class PlanGenerator : public OperatorVisitor {
    */
   void Visit(const Analyze *analyze) override;
 
+  /**
+   * Visit a CteScan operator
+   * @param cte_scan operator
+   */
+  void Visit(const CteScan *cte_scan) override;
+
  private:
   /**
    * Register a pointer to be deleted on transaction commit/abort
@@ -421,6 +433,9 @@ class PlanGenerator : public OperatorVisitor {
    * Transaction Context executing under
    */
   transaction::TransactionContext *txn_;
+
+  // for laterals, maps from temp_oid to plan node
+  LateralWaitersSet &laterals_;
 
   /**
    * Plan node counter, used to generate plan node ids

@@ -1,5 +1,8 @@
 #include "execution/vm/llvm_engine.h"
 
+#include <iostream>
+#include <fstream>
+
 #include <llvm/ADT/StringMap.h>
 #include <llvm/Analysis/TargetLibraryInfo.h>
 #include <llvm/Analysis/TargetTransformInfo.h>
@@ -182,6 +185,11 @@ llvm::Type *LLVMEngine::TypeMap::GetLLVMType(const ast::Type *type) {
       llvm_type = llvm::PointerType::getUnqual(GetLLVMType(ptr_type->GetBase()));
       break;
     }
+//    case ast::Type::TypeId::ReferenceType: {
+//      auto *ptr_type = type->As<ast::ReferenceType>();
+//      llvm_type = llvm::PointerType::getUnqual(GetLLVMType(ptr_type->GetBase()));
+//      break;
+//    }
     case ast::Type::TypeId::ArrayType: {
       auto *arr_type = type->As<ast::ArrayType>();
       llvm::Type *elem_type = GetLLVMType(arr_type->GetElementType());
@@ -202,6 +210,14 @@ llvm::Type *LLVMEngine::TypeMap::GetLLVMType(const ast::Type *type) {
     }
     case ast::Type::TypeId::FunctionType: {
       llvm_type = GetLLVMFunctionType(type->As<ast::FunctionType>());
+      break;
+    }
+    case ast::Type::TypeId::LambdaType: {
+      llvm_type = Int32Type()->getPointerTo();
+      break;
+    }
+    default : {
+      NOISEPAGE_ASSERT(false, "shouldn't be here");
       break;
     }
   }
@@ -274,8 +290,13 @@ llvm::FunctionType *LLVMEngine::TypeMap::GetLLVMFunctionType(const ast::Function
   //
 
   for (const auto &param_info : func_type->GetParams()) {
-    llvm::Type *param_type = GetLLVMType(param_info.type_);
-    param_types.push_back(param_type);
+    // TODO make this read from bytecode stuff instead to avoid this
+    if(param_info.type_->IsSqlValueType()){
+      param_types.push_back( GetLLVMType(param_info.type_->PointerTo()));
+    }else {
+      llvm::Type *param_type = GetLLVMType(param_info.type_);
+      param_types.push_back(param_type);
+    }
   }
 
   return llvm::FunctionType::get(return_type, param_types, false);
@@ -322,18 +343,44 @@ LLVMEngine::FunctionLocalsMap::FunctionLocalsMap(const FunctionInfo &func_info, 
     params_[param.GetOffset()] = &*arg_iter;
   }
 
+  if(func_info.IsLambda()){
+    auto capture_type = type_map->GetLLVMType(func_info.GetFuncType()->GetCapturesType()->PointerTo());
+    auto capture_local = func_locals[local_idx - 1];
+    auto capture_param = params_[capture_local.GetOffset()];
+    auto new_capture_param = ir_builder->CreateBitCast(capture_param, capture_type);
+    params_[capture_local.GetOffset()] = new_capture_param;
+  }
+
+  auto calling_context = func_info;
+//  auto locals_offset = local_idx;
+
   // Allocate all local variables up front.
   for (; local_idx < func_info.GetLocals().size(); local_idx++) {
     const LocalInfo &local_info = func_locals[local_idx];
+//    if(local_in)
     llvm::Type *llvm_type = type_map->GetLLVMType(local_info.GetType());
-    llvm::Value *val = ir_builder_->CreateAlloca(llvm_type);
+    llvm::Value *val;
+//    if(local_info.IsReference()){
+//      auto origin = calling_context.GetLocals()[local_idx];
+//      val = ir_builder_->CreateGEP(params_[func_locals[1].GetOffset()],
+//                                     llvm::ConstantInt::get(type_map->UInt32Type(), 0),
+//                                     llvm::ConstantInt::get(type_map->UInt32Type(), local_idx - locals_offset));
+//    }else{
+      val = ir_builder_->CreateAlloca(llvm_type);
+//    }
     locals_[local_info.GetOffset()] = val;
   }
 }
 
 llvm::Value *LLVMEngine::FunctionLocalsMap::GetArgumentById(LocalVar var) {
   if (auto iter = params_.find(var.GetOffset()); iter != params_.end()) {
-    return iter->second;
+    auto val = iter->second;
+    if((var.GetAddressMode() == LocalVar::AddressMode::Address) && llvm::isa<llvm::Argument>(val)){
+      auto new_val = ir_builder_->CreateAlloca(val->getType());
+      ir_builder_->CreateStore(val, new_val);
+      val = new_val;
+    }
+    return val;
   }
 
   if (auto iter = locals_.find(var.GetOffset()); iter != locals_.end()) {
@@ -536,6 +583,7 @@ void LLVMEngine::CompiledModuleBuilder::DeclareStaticLocals() {
 
 void LLVMEngine::CompiledModuleBuilder::DeclareFunctions() {
   for (const auto &func_info : tpl_module_.GetFunctionsInfo()) {
+//    std::cout << "declaring " << func_info.GetName() << "\n";
     auto *func_type = llvm::cast<llvm::FunctionType>(type_map_->GetLLVMType(func_info.GetFuncType()));
     llvm_module_->getOrInsertFunction(func_info.GetName(), func_type);
   }
@@ -623,6 +671,11 @@ void LLVMEngine::CompiledModuleBuilder::BuildSimpleCFG(const FunctionInfo &func_
 void LLVMEngine::CompiledModuleBuilder::DefineFunction(const FunctionInfo &func_info, llvm::IRBuilder<> *ir_builder) {
   llvm::LLVMContext &ctx = ir_builder->getContext();
   llvm::Function *func = llvm_module_->getFunction(func_info.GetName());
+//  std::cout << func->getName().str() << "\n";
+  if(func->getName().str().find("inline") != std::string::npos) {
+    func->setLinkage(llvm::Function::LinkOnceAnyLinkage);
+    func->addFnAttr(llvm::Attribute::AlwaysInline);
+  }
   llvm::BasicBlock *first_bb = llvm::BasicBlock::Create(ctx, "BB0", func);
   llvm::BasicBlock *entry_bb = llvm::BasicBlock::Create(ctx, "EntryBB", func, first_bb);
 
@@ -934,6 +987,16 @@ void LLVMEngine::CompiledModuleBuilder::Verify() {
     // TODO(pmenon): Do something more here ...
     EXECUTION_LOG_ERROR("ERROR IN MODULE:\n{}", ostream.str());
   }
+//  std::ofstream myfile;
+//  myfile.open ("asm.txt");
+//  myfile << DumpModuleAsm();
+//  myfile.close();
+
+//  std::ofstream myfile1;
+//  myfile1.open ("llvm.txt");
+//  myfile1 << DumpModuleIR();
+//  myfile1.close();
+
 }
 
 void LLVMEngine::CompiledModuleBuilder::Simplify() {
@@ -963,6 +1026,9 @@ void LLVMEngine::CompiledModuleBuilder::Optimize() {
   pm_builder.Inliner = llvm::createFunctionInliningPass(3, 0, false);
   pm_builder.populateFunctionPassManager(function_passes);
   pm_builder.populateModulePassManager(module_passes);
+//  for(auto &func : *llvm_module_) {
+//    func.print(llvm::outs());
+//  }
 
   // Run optimization passes on module
   function_passes.doInitialization();
@@ -971,6 +1037,7 @@ void LLVMEngine::CompiledModuleBuilder::Optimize() {
   }
   function_passes.doFinalization();
   module_passes.run(*llvm_module_);
+
 }
 
 std::unique_ptr<LLVMEngine::CompiledModule> LLVMEngine::CompiledModuleBuilder::Finalize() {
@@ -979,6 +1046,16 @@ std::unique_ptr<LLVMEngine::CompiledModule> LLVMEngine::CompiledModuleBuilder::F
   if (options_.ShouldPersistObjectFile()) {
     PersistObjectToFile(*obj);
   }
+
+//  std::ofstream myfile;
+//  myfile.open ("asm.txt");
+//  myfile << DumpModuleAsm();
+//  myfile.close();
+//
+//  std::ofstream myfile1;
+//  myfile1.open ("llvm.txt");
+//  myfile1 << DumpModuleIR();
+//  myfile1.close();
 
   return std::make_unique<CompiledModule>(std::move(obj));
 }
@@ -1128,7 +1205,7 @@ void LLVMEngine::CompiledModule::Load(const BytecodeModule &module) {
       symbol = loader.getSymbol("_" + func.GetName());
     }
     functions_[func.GetName()] = reinterpret_cast<void *>(symbol.getAddress());
-    NOISEPAGE_ASSERT(symbol.getAddress() != 0, "symbol came out to be badly defined or missing");
+//    NOISEPAGE_ASSERT(symbol.getAddress() != 0, "symbol came out to be badly defined or missing");
   }
 
   // Done

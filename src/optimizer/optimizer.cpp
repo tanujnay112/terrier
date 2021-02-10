@@ -16,6 +16,10 @@
 #include "optimizer/property_enforcer.h"
 #include "optimizer/rule.h"
 #include "planner/plannodes/abstract_plan_node.h"
+#include "planner/plannodes/cte_scan_plan_node.h"
+#include "planner/plannodes/output_schema.h"
+
+#include "optimizer/physical_operators.h"
 
 namespace noisepage::optimizer {
 
@@ -53,15 +57,149 @@ std::unique_ptr<OptimizeResult> Optimizer::BuildPlanTree(transaction::Transactio
   }
 
   try {
-    PlanGenerator generator(optimize_result->GetPlanMetaData());
-    auto best_plan = ChooseBestPlan(txn, accessor, root_id, phys_properties, output_exprs, &generator);
+    auto best_plan = ChooseBestPlan(txn, accessor, root_id, phys_properties, output_exprs);
+
+    // Assign CTE Schema to each CTE Node
+    for (auto &table : context_->GetCTETables()) {
+      planner::CteScanPlanNode *leader = nullptr;
+      common::ManagedPointer<planner::CteScanPlanNode> ldr = common::ManagedPointer(leader);
+      ElectCTELeader(common::ManagedPointer(best_plan), table, &ldr);
+    }
+
     optimize_result->SetPlanNode(std::move(best_plan));
+
     // Reset memo after finishing the optimization
     Reset();
     return optimize_result;
   } catch (Exception &e) {
     Reset();
     throw e;
+  }
+}
+
+void Optimizer::ElectCTELeader(common::ManagedPointer<planner::AbstractPlanNode> plan, catalog::table_oid_t table_oid,
+                               common::ManagedPointer<planner::CteScanPlanNode> *leader) {
+  if ((plan->GetPlanNodeType() == planner::PlanNodeType::CTESCAN) &&
+      (plan.CastManagedPointerTo<planner::CteScanPlanNode>()->GetTableOid() == table_oid)) {
+    if (plan->GetChildren().empty()) {
+      // Set cte schema
+      auto cte_scan_plan_node_set = dynamic_cast<planner::CteScanPlanNode *>(plan.Get());
+      cte_scan_plan_node_set->SetTableSchema(context_->GetCTESchema(table_oid));
+      cte_scan_plan_node_set->SetLeader(leader->CastManagedPointerTo<const planner::CteScanPlanNode>());
+    } else {
+      // Child bearing CTE node
+      // Replace with leader
+      if (*leader != nullptr) {
+        std::vector<std::unique_ptr<planner::AbstractPlanNode>> adopted_children;
+        plan->MoveChildren(&adopted_children);
+        NOISEPAGE_ASSERT(adopted_children.size() == 1, "CTE leader should have 1 child");
+        (*leader)->AddChild(std::move(adopted_children[0]));
+        auto cte_scan = dynamic_cast<planner::CteScanPlanNode *>(plan.Get());
+        cte_scan->SetLeader(leader->CastManagedPointerTo<const planner::CteScanPlanNode>());
+      }
+    }
+
+    if (*leader == nullptr) {
+      auto current_cte = dynamic_cast<planner::CteScanPlanNode *>(plan.Get());
+
+      std::vector<planner::OutputSchema::Column> table_columns;
+//      for (auto &col : context_->GetCTESchema(table_oid).GetColumns()) {
+//        table_columns.emplace_back(col.Name(), col.Type(),
+//                                   std::make_unique<parser::ColumnValueExpression>(
+//                                       current_cte->GetCTETableName(), col.Name(), catalog::INVALID_DATABASE_OID,
+//                                       table_oid, col.Oid(), col.Type()));
+//      }
+      auto new_output_schema = std::make_unique<planner::OutputSchema>(std::move(table_columns));
+
+      auto builder = planner::CteScanPlanNode::Builder();
+      builder.SetLeader(true)
+          .SetScanPredicate(current_cte->GetScanPredicate())
+          .SetCTEType(current_cte->GetCTEType())
+          .SetCTETableName(std::string(current_cte->GetCTETableName()))
+          .SetOutputSchema(std::move(new_output_schema))
+          .SetTableSchema(catalog::Schema(*current_cte->GetTableSchema().Get()))
+          .SetTableOid(table_oid);
+      std::vector<std::unique_ptr<planner::AbstractPlanNode>> children;
+      current_cte->MoveChildren(&children);
+
+      for (auto &child : children) {
+        builder.AddChild(std::move(child));
+      }
+
+      auto new_leader = builder.Build();
+      *leader = common::ManagedPointer(new_leader);
+      current_cte->AddChild(std::move(new_leader));
+
+      current_cte->SetLeader(leader->CastManagedPointerTo<const planner::CteScanPlanNode>());
+    }
+  }
+  auto children = plan->GetChildren();
+  for (auto &i : children) {
+    ElectCTELeader(i, table_oid, leader);
+  }
+}
+
+void Optimizer::PopulateLateralMappings(GroupExpression *gexpr, std::vector<common::ManagedPointer<parser::AbstractExpression>>
+                                                                    &input_cols) {
+  auto op_type = gexpr->Contents()->GetOpType();
+  if(OpType::INNERINDEXJOIN > op_type || OpType::LEFTSEMIHASHJOIN < op_type){
+    // not a join
+    return;
+  }
+  std::vector<catalog::table_oid_t> lateral_oids;
+  switch(gexpr->Contents()->GetOpType()){
+//    case OpType::INNERINDEXJOIN:
+//      lateral_oids =
+//          gexpr->Contents()->GetContentsAs<InnerIndexJoin>()->GetLateralOids();
+//      break;
+    case OpType::INNERNLJOIN:
+      lateral_oids =
+          gexpr->Contents()->GetContentsAs<InnerNLJoin>()->GetLateralOids();
+      break;
+//    case OpType::LEFTNLJOIN:
+//      lateral_oids =
+//          gexpr->Contents()->GetContentsAs<LeftNLJoin>()->GetLateralOids();
+//      break;
+//    case OpType::RIGHTNLJOIN:
+//      lateral_oids =
+//          gexpr->Contents()->GetContentsAs<RightNLJoin>()->GetLateralOids();
+//      break;
+//    case OpType::OUTERNLJOIN:
+//      lateral_oids =
+//          gexpr->Contents()->GetContentsAs<OuterNLJoin>()->GetLateralOids();
+//      break;
+    case OpType::INNERHASHJOIN:
+      lateral_oids =
+          gexpr->Contents()->GetContentsAs<InnerHashJoin>()->GetLateralOids();
+      break;
+    case OpType::LEFTHASHJOIN:
+      lateral_oids =
+          gexpr->Contents()->GetContentsAs<LeftHashJoin>()->GetLateralOids();
+      break;
+//    case OpType::RIGHTHASHJOIN:
+//      lateral_oids =
+//          gexpr->Contents()->GetContentsAs<RightHashJoin>()->GetLateralOids();
+//      break;
+//    case OpType::OUTERHASHJOIN:
+//      lateral_oids =
+//          gexpr->Contents()->GetContentsAs<OuterHashJoin>()->GetLateralOids();
+//      break;
+//    case OpType::LEFTSEMIHASHJOIN:
+//      lateral_oids =
+//          gexpr->Contents()->GetContentsAs<LeftSemiHashJoin>()->GetLateralOids();
+      break;
+    default:
+      UNREACHABLE("No lateral mappings allowed on non join node");
+
+  }
+//    auto join_op = op->Contents()->GetContentsAs<InnerNLJoin>();
+  if(!lateral_oids.empty()) {
+    ExprMap child_expr_map;
+    for (unsigned offset = 0; offset < input_cols.size(); ++offset) {
+      NOISEPAGE_ASSERT(input_cols[offset] != nullptr, "invalid input column found");
+      child_expr_map[input_cols[offset]] = offset;
+    }
+    context_->AddLateralEntries(lateral_oids, std::move(child_expr_map));
   }
 }
 
@@ -94,6 +232,9 @@ std::unique_ptr<planner::AbstractPlanNode> Optimizer::ChooseBestPlan(
   // root plan. Also keep propagate expression to column offset mapping
   std::vector<std::unique_ptr<planner::AbstractPlanNode>> children_plans;
   std::vector<ExprMap> children_expr_map;
+
+//  PopulateLateralMappings(gexpr, input_cols[0]);
+
   for (size_t i = 0; i < child_groups.size(); ++i) {
     ExprMap child_expr_map;
     for (unsigned offset = 0; offset < input_cols[i].size(); ++offset) {
@@ -113,7 +254,23 @@ std::unique_ptr<planner::AbstractPlanNode> Optimizer::ChooseBestPlan(
   planner::PlanMetaData::PlanNodeMetaData plan_node_meta_data(context_->GetMemo().GetGroupByID(id)->GetNumRows());
   auto plan = generator->ConvertOpNode(txn, accessor, op, required_props, required_cols, output_cols,
                                        std::move(children_plans), std::move(children_expr_map), plan_node_meta_data);
+  PlanGenerator generator(context_->GetLateralWaitersSet());
+  auto plan = generator.ConvertOpNode(txn, accessor, op, required_props, required_cols, output_cols,
+                                      std::move(children_plans), std::move(children_expr_map));
+  NOISEPAGE_ASSERT(plan != nullptr, "got a null plan");
   OPTIMIZER_LOG_TRACE("Finish Choosing best plan for group " + std::to_string(id.UnderlyingValue()));
+
+  if (op->Contents()->GetOpType() == OpType::CTESCAN && !child_groups.empty()) {
+    NOISEPAGE_ASSERT(child_groups.size() <= 2, "CTE should not have more than 2 children.");
+    if (plan->GetPlanNodeType() == planner::PlanNodeType::CTESCAN) {
+      auto cte_scan_plan_node = reinterpret_cast<planner::CteScanPlanNode *>(plan.get());
+      context_->SetCTESchema(cte_scan_plan_node->GetTableOid(), *cte_scan_plan_node->GetTableSchema());
+    } else if ((*plan->GetChildren().begin())->GetPlanNodeType() == planner::PlanNodeType::CTESCAN) {
+      // CTE Scan node can be inside a Projection node
+      auto cte_scan_plan_node = reinterpret_cast<planner::CteScanPlanNode *>(&(*plan->GetChildren().begin()->Get()));
+      context_->SetCTESchema(cte_scan_plan_node->GetTableOid(), *(cte_scan_plan_node)->GetTableSchema());
+    }
+  }
 
   delete op;
   return plan;

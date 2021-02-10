@@ -116,10 +116,10 @@ void UpdateTranslator::DeclareUpdater(noisepage::execution::compiler::FunctionBu
   SetOids(builder);
   // var updater : StorageInterface
   auto *storage_interface_type = GetCodeGen()->BuiltinType(ast::BuiltinType::Kind::StorageInterface);
-  builder->Append(GetCodeGen()->DeclareVar(updater_, storage_interface_type, nullptr));
+  builder->Append(GetCodeGen()->DeclareVar( updater_, storage_interface_type, nullptr));
   // @storageInterfaceInit(updater, execCtx, table_oid, col_oids, true)
   ast::Expr *updater_setup = GetCodeGen()->StorageInterfaceInit(
-      updater_, GetExecutionContext(), GetPlanAs<planner::UpdatePlanNode>().GetTableOid().UnderlyingValue(), col_oids_,
+      GetCodeGen()->AddressOf(updater_), GetExecutionContext(), GetPlanAs<planner::UpdatePlanNode>().GetTableOid().UnderlyingValue(), col_oids_,
       true);
   builder->Append(GetCodeGen()->MakeStmt(updater_setup));
 }

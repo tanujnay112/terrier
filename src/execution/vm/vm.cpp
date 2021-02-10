@@ -28,6 +28,9 @@ class VM::Frame {
 
   void *PtrToLocalAt(const LocalVar local) const {
     EnsureInFrame(local);
+//    if(local.GetReferenceMode() == LocalVar::ReferenceMode::Reference){
+//      return *reinterpret_cast<void**>(frame_data_ + local.GetOffset());
+//    }
     return frame_data_ + local.GetOffset();
   }
 
@@ -412,6 +415,13 @@ void VM::Interpret(const uint8_t *ip, Frame *frame) {  // NOLINT
   GEN_ASSIGN(int32_t, 4);
   GEN_ASSIGN(int64_t, 8);
 #undef GEN_ASSIGN
+  OP(AssignN) : {
+    auto *dest = frame->LocalAt<byte *>(READ_LOCAL_ID());
+    auto *src = frame->LocalAt<byte *>(READ_LOCAL_ID());
+    auto len = READ_UIMM4();
+    OpAssignN(dest, src, len);
+    DISPATCH_NEXT();
+  }
 
   OP(AssignImm4F) : {
     auto *dest = frame->LocalAt<float *>(READ_LOCAL_ID());
@@ -688,6 +698,115 @@ void VM::Interpret(const uint8_t *ip, Frame *frame) {  // NOLINT
 
     auto scan_fn = reinterpret_cast<sql::TableVectorIterator::ScanFn>(module_->GetRawFunctionImpl(scan_fn_id));
     OpParallelScanTable(table_oid, col_oids, num_oids, query_state, exec_context, scan_fn);
+    DISPATCH_NEXT();
+  }
+
+  // -------------------------------------------------------
+  // Cte Scan operations
+  // -------------------------------------------------------
+
+  OP(CteScanInit) : {
+    auto iter = frame->LocalAt<sql::CteScanIterator *>(READ_LOCAL_ID());
+    auto exec_ctx = frame->LocalAt<exec::ExecutionContext *>(READ_LOCAL_ID());
+    auto table_oid = frame->LocalAt<uint32_t>(READ_LOCAL_ID());
+    auto schema_cols_ids = frame->LocalAt<uint32_t *>(READ_LOCAL_ID());
+    auto schema_cols_type = frame->LocalAt<uint32_t *>(READ_LOCAL_ID());
+    auto num_oids = READ_UIMM4();
+    OpCteScanInit(iter, exec_ctx, table_oid, schema_cols_ids, schema_cols_type, num_oids);
+    DISPATCH_NEXT();
+  }
+  OP(CteScanGetTable) : {
+    auto *table = frame->LocalAt<storage::SqlTable **>(READ_LOCAL_ID());
+    auto iter = frame->LocalAt<sql::CteScanIterator *>(READ_LOCAL_ID());
+    OpCteScanGetTable(table, iter);
+    DISPATCH_NEXT();
+  }
+  OP(CteScanGetTableOid) : {
+    auto table_oid = frame->LocalAt<noisepage::catalog::table_oid_t *>(READ_LOCAL_ID());
+    auto iter = frame->LocalAt<sql::CteScanIterator *>(READ_LOCAL_ID());
+    OpCteScanGetTableOid(table_oid, iter);
+    DISPATCH_NEXT();
+  }
+  OP(CteScanGetInsertTempTablePR) : {
+    auto *pr = frame->LocalAt<storage::ProjectedRow **>(READ_LOCAL_ID());
+    auto iter = frame->LocalAt<sql::CteScanIterator *>(READ_LOCAL_ID());
+    OpCteScanGetInsertTempTablePR(pr, iter);
+    DISPATCH_NEXT();
+  }
+  OP(CteScanTableInsert) : {
+    auto tuple_slot = frame->LocalAt<noisepage::storage::TupleSlot *>(READ_LOCAL_ID());
+    auto iter = frame->LocalAt<sql::CteScanIterator *>(READ_LOCAL_ID());
+    OpCteScanTableInsert(tuple_slot, iter);
+    DISPATCH_NEXT();
+  }
+  OP(CteScanFree) : {
+    auto iter = frame->LocalAt<sql::CteScanIterator *>(READ_LOCAL_ID());
+    OpCteScanFree(iter);
+    DISPATCH_NEXT();
+  }
+
+  // -------------------------------------------------------
+  // Iterative Cte Scan operations
+  // -------------------------------------------------------
+
+  OP(IndCteScanInit) : {
+    auto iter = frame->LocalAt<sql::IndCteScanIterator *>(READ_LOCAL_ID());
+    auto exec_ctx = frame->LocalAt<exec::ExecutionContext *>(READ_LOCAL_ID());
+    auto table_oid = frame->LocalAt<uint32_t>(READ_LOCAL_ID());
+    auto schema_cols_ids = frame->LocalAt<uint32_t *>(READ_LOCAL_ID());
+    auto schema_cols_type = frame->LocalAt<uint32_t *>(READ_LOCAL_ID());
+    auto num_oids = READ_UIMM4();
+    auto is_recursive = static_cast<bool>(READ_IMM1());
+    OpIndCteScanInit(iter, exec_ctx, table_oid, schema_cols_ids, schema_cols_type, num_oids, is_recursive);
+    DISPATCH_NEXT();
+  }
+
+  OP(IndCteScanGetResult) : {
+    auto *result = frame->LocalAt<sql::CteScanIterator **>(READ_LOCAL_ID());
+    auto iter = frame->LocalAt<sql::IndCteScanIterator *>(READ_LOCAL_ID());
+    OpIndCteScanGetResult(result, iter);
+    DISPATCH_NEXT();
+  }
+  OP(IndCteScanGetReadCte) : {
+    auto *table = frame->LocalAt<sql::CteScanIterator **>(READ_LOCAL_ID());
+    auto iter = frame->LocalAt<sql::IndCteScanIterator *>(READ_LOCAL_ID());
+    OpIndCteScanGetReadCte(table, iter);
+    DISPATCH_NEXT();
+  }
+
+  OP(IndCteScanGetWriteCte) : {
+    auto *table = frame->LocalAt<sql::CteScanIterator **>(READ_LOCAL_ID());
+    auto iter = frame->LocalAt<sql::IndCteScanIterator *>(READ_LOCAL_ID());
+    OpIndCteScanGetWriteCte(table, iter);
+    DISPATCH_NEXT();
+  }
+  OP(IndCteScanGetReadTableOid) : {
+    auto table_oid = frame->LocalAt<noisepage::catalog::table_oid_t *>(READ_LOCAL_ID());
+    auto iter = frame->LocalAt<sql::IndCteScanIterator *>(READ_LOCAL_ID());
+    OpIndCteScanGetReadTableOid(table_oid, iter);
+    DISPATCH_NEXT();
+  }
+  OP(IndCteScanAccumulate) : {
+    auto table_oid = frame->LocalAt<bool *>(READ_LOCAL_ID());
+    auto iter = frame->LocalAt<sql::IndCteScanIterator *>(READ_LOCAL_ID());
+    OpIndCteScanAccumulate(table_oid, iter);
+    DISPATCH_NEXT();
+  }
+  OP(IndCteScanGetInsertTempTablePR) : {
+    auto projected_row = frame->LocalAt<noisepage::storage::ProjectedRow **>(READ_LOCAL_ID());
+    auto iter = frame->LocalAt<sql::IndCteScanIterator *>(READ_LOCAL_ID());
+    OpIndCteScanGetInsertTempTablePR(projected_row, iter);
+    DISPATCH_NEXT();
+  }
+  OP(IndCteScanTableInsert) : {
+    auto tuple_slot = frame->LocalAt<noisepage::storage::TupleSlot *>(READ_LOCAL_ID());
+    auto iter = frame->LocalAt<sql::IndCteScanIterator *>(READ_LOCAL_ID());
+    OpIndCteScanTableInsert(tuple_slot, iter);
+    DISPATCH_NEXT();
+  }
+  OP(IndCteScanFree) : {
+    auto iter = frame->LocalAt<sql::IndCteScanIterator *>(READ_LOCAL_ID());
+    OpIndCteScanFree(iter);
     DISPATCH_NEXT();
   }
 
@@ -2154,6 +2273,38 @@ void VM::Interpret(const uint8_t *ip, Frame *frame) {  // NOLINT
   GEN_PARAM_GET(String, StringVal)
 #undef GEN_PARAM_GET
 
+#define GEN_PARAM_ADD(Name, SqlType)                                            \
+  OP(AddParam##Name) : {                                                        \
+    auto *exec_ctx = frame->LocalAt<exec::ExecutionContext *>(READ_LOCAL_ID()); \
+    auto *ret = frame->LocalAt<sql::SqlType *>(READ_LOCAL_ID());                \
+    OpAddParam##Name(exec_ctx, ret);                                            \
+    DISPATCH_NEXT();                                                            \
+  }
+
+GEN_PARAM_ADD(Bool, BoolVal)
+GEN_PARAM_ADD(TinyInt, Integer)
+GEN_PARAM_ADD(SmallInt, Integer)
+GEN_PARAM_ADD(Int, Integer)
+GEN_PARAM_ADD(BigInt, Integer)
+GEN_PARAM_ADD(Real, Real)
+GEN_PARAM_ADD(Double, Real)
+GEN_PARAM_ADD(DateVal, DateVal)
+GEN_PARAM_ADD(TimestampVal, TimestampVal)
+GEN_PARAM_ADD(String, StringVal)
+#undef GEN_PARAM_ADD
+
+OP(StartNewParams) : {
+  auto *exec_ctx = frame->LocalAt<exec::ExecutionContext *>(READ_LOCAL_ID());
+  OpStartNewParams(exec_ctx);
+  DISPATCH_NEXT();
+}
+
+  OP(FinishParams) : {
+    auto *exec_ctx = frame->LocalAt<exec::ExecutionContext *>(READ_LOCAL_ID());
+    OpFinishParams(exec_ctx);
+    DISPATCH_NEXT();
+  }
+
   // -------------------------------------------------------
   // Trig functions
   // -------------------------------------------------------
@@ -2587,6 +2738,7 @@ const uint8_t *VM::ExecuteCall(const uint8_t *ip, VM::Frame *caller) {
 
   // Lookup the function
   const FunctionInfo *func_info = module_->GetFuncInfoById(func_id);
+  //std::cout << "calling " << func_info->GetName() << "\n";
   NOISEPAGE_ASSERT(func_info != nullptr, "Function doesn't exist in module!");
   const std::size_t frame_size = func_info->GetFrameSize();
 
@@ -2603,13 +2755,18 @@ const uint8_t *VM::ExecuteCall(const uint8_t *ip, VM::Frame *caller) {
     raw_frame = static_cast<uint8_t *>(alloca(frame_size));
   }
 
+//  std::cout << func_info->GetName() << "\n";
+//  if(func_info->GetName() == "jointest8"){
+//    std::cout << "lets go?\n";
+//  }
+
   // Set up the arguments to the function
   for (uint32_t i = 0; i < num_params; i++) {
     const LocalInfo &param_info = func_info->GetLocals()[i];
     const LocalVar param = LocalVar::Decode(READ_LOCAL_ID());
     const void *param_ptr = caller->PtrToLocalAt(param);
     if (param.GetAddressMode() == LocalVar::AddressMode::Address) {
-      std::memcpy(raw_frame + param_info.GetOffset(), &param_ptr, param_info.GetSize());
+      std::memcpy(raw_frame + param_info.GetOffset(), &param_ptr, sizeof(void*));
     } else {
       std::memcpy(raw_frame + param_info.GetOffset(), param_ptr, param_info.GetSize());
     }

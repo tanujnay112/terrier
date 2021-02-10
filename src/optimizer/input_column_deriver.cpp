@@ -37,7 +37,16 @@ std::pair<PT1, PT2> InputColumnDeriver::DeriveInputColumns(
   return std::move(output_input_cols_);
 }
 
-void InputColumnDeriver::Visit(UNUSED_ATTRIBUTE const TableFreeScan *op) {}
+void InputColumnDeriver::Visit(UNUSED_ATTRIBUTE const TableFreeScan *op) {
+  if(required_cols_.empty()){
+    parser::AbstractExpression *dummy_cve = new parser::ConstantValueExpression(type::TypeId::INTEGER);
+    txn_->RegisterCommitAction([=](){ delete dummy_cve; });
+    txn_->RegisterAbortAction([=](){ delete dummy_cve; });
+    PT2 child_cols;
+    PT1 output_cols = {common::ManagedPointer(dummy_cve)};
+    output_input_cols_ = std::make_pair(std::move(output_cols), std::move(child_cols));
+  }
+}
 
 void InputColumnDeriver::Visit(UNUSED_ATTRIBUTE const SeqScan *) { ScanHelper(); }
 
@@ -51,6 +60,8 @@ void InputColumnDeriver::Visit(const QueryDerivedScan *op) {
   for (auto expr : required_cols_) {
     parser::ExpressionUtil::GetTupleValueExprs(&output_cols_map, expr);
   }
+  NOISEPAGE_ASSERT(output_cols_map.size() == required_cols_.size(),
+                   "Output columns of the QueryDerivedScan and required_cols_ from above mismatch");
 
   auto output_cols = std::vector<common::ManagedPointer<parser::AbstractExpression>>(output_cols_map.size());
   std::vector<common::ManagedPointer<parser::AbstractExpression>> input_cols(output_cols.size());
@@ -60,7 +71,10 @@ void InputColumnDeriver::Visit(const QueryDerivedScan *op) {
     output_cols[entry.second] = entry.first;
 
     // Get the actual expression
-    auto input_col = alias_expr_map[tv_expr->GetColumnName()];
+    auto alias =
+        tv_expr->GetAlias().IsSerialNoValid() ? tv_expr->GetAlias() : parser::AliasType(tv_expr->GetColumnName());
+    NOISEPAGE_ASSERT(alias_expr_map.count(alias) > 0, "Couldn't find alias in alias_to_expr map");
+    auto input_col = alias_expr_map[alias];
 
     // QueryDerivedScan only modify the column name to be a tv_expr, does not change the mapping
     input_cols[entry.second] = input_col;
@@ -94,6 +108,97 @@ void InputColumnDeriver::Visit(const Limit *op) {
 
   PT2 child_cols = PT2{cols};
   output_input_cols_ = std::make_pair(std::move(cols), std::move(child_cols));
+}
+
+void InputColumnDeriver::Visit(const CteScan *op) {
+  // All aggregate expressions and TVEs in the required columns and internal
+  // sort columns are needed by the child node
+  ExprSet input_cols_set;
+  for (auto expr : required_cols_) {
+    if (parser::ExpressionUtil::IsAggregateExpression(expr)) {
+      input_cols_set.insert(expr);
+    } else {
+      parser::ExpressionUtil::GetTupleValueExprs(&input_cols_set, expr);
+    }
+  }
+
+  std::vector<common::ManagedPointer<parser::AbstractExpression>> cols;
+  for (const auto &expr : input_cols_set) {
+    cols.push_back(expr);
+  }
+
+  PT2 child_cols;
+
+  child_cols.reserve(gexpr_->GetChildrenGroupsSize());
+  for (size_t i = 0; i < gexpr_->GetChildrenGroupsSize(); i++) {
+    auto child_exprs = op->GetChildExpressions()[i];
+    std::vector<common::ManagedPointer<parser::AbstractExpression>> new_child_exprs;
+    new_child_exprs.reserve(child_exprs.size());
+    for (auto &elem : child_exprs) {
+      new_child_exprs.push_back(elem);
+    }
+    child_exprs.clear();
+    child_exprs = new_child_exprs;
+    child_cols.push_back(std::move(child_exprs));
+  }
+
+  output_input_cols_ = std::make_pair(std::move(cols), std::move(child_cols));
+}
+
+void InputColumnDeriver::Visit(const Union *op) {
+  // All aggregate expressions and TVEs in the required columns and internal
+  ExprMap input_cols_map;
+  size_t i = 0;
+  for (auto expr : required_cols_) {
+    if(expr->GetExpressionType() == parser::ExpressionType::VALUE_TUPLE){
+      input_cols_map[expr] = i;
+    }else {
+      parser::ExpressionUtil::GetTupleValueExprs(&input_cols_map, expr);
+    }
+    i++;
+  }
+
+  auto union_map = op->GetColumns();
+  auto &left_map = union_map.first;
+  auto &right_map = union_map.second;
+  auto left_cols = std::vector<common::ManagedPointer<parser::AbstractExpression>>(input_cols_map.size());
+  auto right_cols = std::vector<common::ManagedPointer<parser::AbstractExpression>>(input_cols_map.size());
+  std::vector<common::ManagedPointer<parser::AbstractExpression>> output_cols(input_cols_map.size());
+//  for(const auto &expr : input_cols_map){
+//    auto l_iter = left_map.find(expr->GetAlias());
+//    NOISEPAGE_ASSERT(l_iter != left_map.end(), "Expression not found in left union map");
+//    left_cols.push_back(l_iter->second);
+//
+//    auto r_iter = right_map.find(expr->GetAlias());
+//    NOISEPAGE_ASSERT(r_iter != right_map.end(), "Expression not found in left union map");
+//    right_cols.push_back(r_iter->second);
+//  }
+
+  for (auto &entry : input_cols_map) {
+//    auto tv_expr = entry.first.CastManagedPointerTo<parser::ColumnValueExpression>();
+    output_cols[entry.second] = entry.first;
+
+    // Get the actual expression
+    auto l_iter = left_map.find(entry.first->GetAlias());
+    NOISEPAGE_ASSERT(l_iter != left_map.end(), "Expression not found in left union map");
+    left_cols[entry.second] = l_iter->second;
+
+    auto r_iter = right_map.find(entry.first->GetAlias());
+    NOISEPAGE_ASSERT(r_iter != right_map.end(), "Expression not found in left union map");
+    right_cols[entry.second] = r_iter->second;
+  }
+
+//  std::vector<common::ManagedPointer<parser::AbstractExpression>> cols;
+//  size_t i = 0;
+//  for (auto &expr : output_cols) {
+//    auto dve = new parser::DerivedValueExpression(expr->GetReturnValueType(), -1, i++);
+//    cols.push_back(common::ManagedPointer<parser::AbstractExpression>(dve));
+//    txn_->RegisterCommitAction([=]() { delete dve; });
+//    txn_->RegisterAbortAction([=]() { delete dve; });
+//  }
+
+  PT2 child_cols = {left_cols, right_cols};
+  output_input_cols_ = std::make_pair(std::move(output_cols), std::move(child_cols));
 }
 
 void InputColumnDeriver::Visit(UNUSED_ATTRIBUTE const OrderBy *op) {
@@ -233,7 +338,11 @@ void InputColumnDeriver::Visit(UNUSED_ATTRIBUTE const Insert *op) {
   output_input_cols_ = std::make_pair(std::move(required_cols_), std::move(input));
 }
 
-void InputColumnDeriver::Visit(UNUSED_ATTRIBUTE const InsertSelect *op) { Passdown(); }
+void InputColumnDeriver::Visit(const InsertSelect *op) {
+  auto db_id = op->GetDatabaseOid();
+  auto tbl_id = op->GetTableOid();
+  InputBaseTableColumns("", db_id, tbl_id);
+}
 
 void InputColumnDeriver::InputBaseTableColumns(const std::string &alias, catalog::db_oid_t db,
                                                catalog::table_oid_t tbl) {
@@ -444,6 +553,22 @@ void InputColumnDeriver::JoinHelper(const BaseOperatorNodeContents *op) {
     output_cols[expr_idx_pair.second] = expr_idx_pair.first;
   }
 
+//  // need at least one column from each child
+//  if(build_table_cols_set.empty()){
+//    parser::AbstractExpression *dummy_cve = new parser::ConstantValueExpression(type::TypeId::INTEGER);
+//    txn_->RegisterCommitAction([=](){ delete dummy_cve; });
+//    txn_->RegisterAbortAction([=](){ delete dummy_cve; });
+//    build_table_cols_set.insert(common::ManagedPointer(dummy_cve));
+//    NOISEPAGE_ASSERT(!probe_table_cols_set.empty(), "Both probe and build table column sets can't be empty");
+//  }
+//
+//  if(probe_table_cols_set.empty()){
+//    parser::AbstractExpression *dummy_cve = new parser::ConstantValueExpression(type::TypeId::INTEGER);
+//    txn_->RegisterCommitAction([=](){ delete dummy_cve; });
+//    txn_->RegisterAbortAction([=](){ delete dummy_cve; });
+//    probe_table_cols_set.insert(common::ManagedPointer(dummy_cve));
+//  }
+
   // Derive build columns (first element of input column vector)
   std::vector<common::ManagedPointer<parser::AbstractExpression>> build_cols;
   for (auto &col : build_table_cols_set) {
@@ -455,6 +580,9 @@ void InputColumnDeriver::JoinHelper(const BaseOperatorNodeContents *op) {
   for (auto &col : probe_table_cols_set) {
     probe_cols.push_back(col);
   }
+
+//  NOISEPAGE_ASSERT(probe_cols.size() > 0, "empty probe columns");
+//  NOISEPAGE_ASSERT(build_cols.size() > 0, "empty build columns");
 
   PT2 child_cols = PT2{build_cols, probe_cols};
   output_input_cols_ = std::make_pair(std::move(output_cols), std::move(child_cols));

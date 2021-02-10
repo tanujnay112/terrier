@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <string>
 #include <utility>
@@ -287,6 +288,10 @@ class FunctionInfo {
    */
   uint32_t GetParamsCount() const noexcept { return num_params_; }
 
+  void DeferAction(const std::function<void()> action) { actions_.push_back(action); }
+
+  bool IsLambda() const { return is_lambda_; }
+
  private:
   friend class BytecodeGenerator;
 
@@ -302,9 +307,15 @@ class FunctionInfo {
   // Allocate a new local variable in the function.
   LocalVar NewLocal(ast::Type *type, const std::string &name, LocalInfo::Kind kind);
 
+  LocalVar captures_;
+
+  bool is_lambda_{false};
+
+  std::vector<std::function<void()>> actions_;
  private:
   // The ID of the function in the module. IDs are unique within a module.
   FunctionId id_;
+
   // The name of the function.
   std::string name_;
   // The TPL function type of this function.

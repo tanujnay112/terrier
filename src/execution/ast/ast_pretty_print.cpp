@@ -204,6 +204,12 @@ void AstPrettyPrintImpl::VisitMapTypeRepr(MapTypeRepr *node) {
   Visit(node->ValType());
 }
 
+void AstPrettyPrintImpl::VisitLambdaTypeRepr(LambdaTypeRepr *node) {
+  os_ << "lambda[";
+  Visit(node->FunctionType());
+  os_ << "]";
+}
+
 void AstPrettyPrintImpl::VisitLitExpr(LitExpr *node) {
   switch (node->GetLiteralKind()) {
     case LitExpr::LitKind::Nil:
@@ -274,6 +280,10 @@ void AstPrettyPrintImpl::VisitIfStmt(IfStmt *node) {
   }
 }
 
+void AstPrettyPrintImpl::VisitBreakStmt(BreakStmt *node) {
+  os_ << "break;\n";
+}
+
 void AstPrettyPrintImpl::VisitExpressionStmt(ExpressionStmt *node) { Visit(node->Expression()); }
 
 void AstPrettyPrintImpl::VisitIndexExpr(IndexExpr *node) {
@@ -294,6 +304,11 @@ void AstPrettyPrintImpl::VisitFunctionTypeRepr(FunctionTypeRepr *node) {
   }
   os_ << ") -> ";
   Visit(node->ReturnType());
+}
+
+void AstPrettyPrintImpl::VisitLambdaExpr(LambdaExpr *node) {
+  os_ << "lambda ";
+  VisitFunctionLitExpr(node->GetFunctionLitExpr());
 }
 
 }  // namespace

@@ -17,15 +17,19 @@
 #include "execution/compiler/expression/constant_translator.h"
 #include "execution/compiler/expression/derived_value_translator.h"
 #include "execution/compiler/expression/function_translator.h"
+#include "execution/compiler/expression/lateral_value_translator.h"
 #include "execution/compiler/expression/null_check_translator.h"
 #include "execution/compiler/expression/param_value_translator.h"
 #include "execution/compiler/expression/star_translator.h"
 #include "execution/compiler/expression/unary_translator.h"
 #include "execution/compiler/function_builder.h"
 #include "execution/compiler/operator/csv_scan_translator.h"
+#include "execution/compiler/operator/cte_scan_leader_translator.h"
+#include "execution/compiler/operator/cte_scan_translator.h"
 #include "execution/compiler/operator/delete_translator.h"
 #include "execution/compiler/operator/hash_aggregation_translator.h"
 #include "execution/compiler/operator/hash_join_translator.h"
+#include "execution/compiler/operator/ind_cte_scan_leader_translator.h"
 #include "execution/compiler/operator/index_create_translator.h"
 #include "execution/compiler/operator/index_join_translator.h"
 #include "execution/compiler/operator/index_scan_translator.h"
@@ -38,6 +42,7 @@
 #include "execution/compiler/operator/seq_scan_translator.h"
 #include "execution/compiler/operator/sort_translator.h"
 #include "execution/compiler/operator/static_aggregation_translator.h"
+#include "execution/compiler/operator/union_translator.h"
 #include "execution/compiler/operator/update_translator.h"
 #include "execution/compiler/pipeline.h"
 #include "execution/exec/execution_settings.h"
@@ -66,6 +71,7 @@
 #include "planner/plannodes/projection_plan_node.h"
 #include "planner/plannodes/seq_scan_plan_node.h"
 #include "planner/plannodes/set_op_plan_node.h"
+#include "planner/plannodes/union_plan_node.h"
 #include "planner/plannodes/update_plan_node.h"
 #include "self_driving/modeling/operating_unit_recorder.h"
 #include "spdlog/fmt/fmt.h"
@@ -78,16 +84,19 @@ std::atomic<uint32_t> unique_ids{0};
 }  // namespace
 
 CompilationContext::CompilationContext(ExecutableQuery *query, catalog::CatalogAccessor *accessor,
-                                       const CompilationMode mode, const exec::ExecutionSettings &settings)
+                                       const CompilationMode mode, const exec::ExecutionSettings &settings,
+                                       ast::LambdaExpr *output_callback)
     : unique_id_(unique_ids++),
       query_(query),
       mode_(mode),
       codegen_(query_->GetContext(), accessor),
       query_state_var_(codegen_.MakeIdentifier("queryState")),
-      query_state_type_(codegen_.MakeIdentifier("QueryState")),
+      query_state_type_(codegen_.MakeIdentifier(output_callback == nullptr ? "QueryState"
+                                                                           : output_callback->GetName().GetString() + "QueryState")),
       query_state_(query_state_type_, [this](CodeGen *codegen) { return codegen->MakeExpr(query_state_var_); }),
+      output_callback_(output_callback),
       counters_enabled_(settings.GetIsCountersEnabled()),
-      pipeline_metrics_enabled_(settings.GetIsPipelineMetricsEnabled()) {}
+      pipeline_metrics_enabled_(output_callback ? false : settings.GetIsPipelineMetricsEnabled()) {}
 
 ast::FunctionDecl *CompilationContext::GenerateInitFunction() {
   const auto name = codegen_.MakeIdentifier(GetFunctionPrefix() + "_Init");
@@ -154,6 +163,9 @@ void CompilationContext::GeneratePlan(const planner::AbstractPlanNode &plan) {
   std::vector<Pipeline *> execution_order;
   main_pipeline.CollectDependencies(&execution_order);
   for (auto *pipeline : execution_order) {
+    if(pipeline->IsPrepared()){
+      continue;
+    }
     // Extract and record the translators.
     // Pipelines require obtaining feature IDs, but features don't exist until translators are extracted.
     // Therefore translator extraction must happen before pipelines are generated.
@@ -172,7 +184,7 @@ void CompilationContext::GeneratePlan(const planner::AbstractPlanNode &plan) {
       }
       main_builder.DeclareAll(pipeline_decls);
     }
-    pipeline->GeneratePipeline(&main_builder);
+    pipeline->GeneratePipeline(&main_builder, query_id_t{unique_id_}, output_callback_);
   }
 
   // Register the tear-down function.
@@ -189,17 +201,20 @@ void CompilationContext::GeneratePlan(const planner::AbstractPlanNode &plan) {
 // static
 std::unique_ptr<ExecutableQuery> CompilationContext::Compile(const planner::AbstractPlanNode &plan,
                                                              const exec::ExecutionSettings &exec_settings,
-                                                             catalog::CatalogAccessor *accessor,
-                                                             const CompilationMode mode,
-                                                             common::ManagedPointer<const std::string> query_text) {
+                                                             catalog::CatalogAccessor *accessor, CompilationMode mode,
+                                                             common::ManagedPointer<const std::string> query_text,
+                                                             ast::LambdaExpr *output_callback,
+                                                             common::ManagedPointer<ast::Context> context) {
   // The query we're generating code for.
-  auto query = std::make_unique<ExecutableQuery>(plan, exec_settings);
+  auto query = std::make_unique<ExecutableQuery>(plan, exec_settings, context.Get());
   // TODO(Lin): Hacking... remove this after getting the counters in
   query->SetQueryText(query_text);
 
   // Generate the plan for the query
-  CompilationContext ctx(query.get(), accessor, mode, exec_settings);
+  CompilationContext ctx(query.get(), accessor, mode, exec_settings, output_callback);
   ctx.GeneratePlan(plan);
+  // TODO(tanujnay112) hacking
+  query->SetQueryStateType(ctx.query_state_.GetType());
 
   // Done
   return query;
@@ -219,6 +234,8 @@ void CompilationContext::PrepareOut(const planner::AbstractPlanNode &plan, Pipel
 
 void CompilationContext::Prepare(const planner::AbstractPlanNode &plan, Pipeline *pipeline) {
   std::unique_ptr<OperatorTranslator> translator;
+
+  NOISEPAGE_ASSERT(ops_.find(&plan) == ops_.end(), "plan already prepared");
 
   switch (plan.GetPlanNodeType()) {
     case planner::PlanNodeType::AGGREGATE: {
@@ -293,9 +310,28 @@ void CompilationContext::Prepare(const planner::AbstractPlanNode &plan, Pipeline
       translator = std::make_unique<IndexJoinTranslator>(index_join, this, pipeline);
       break;
     }
+    case planner::PlanNodeType::CTESCANLEADER: {
+      const auto &cte_scan_leader = dynamic_cast<const planner::CteScanPlanNode &>(plan);
+      if (cte_scan_leader.GetIsInductive()) {
+        translator = std::make_unique<IndCteScanLeaderTranslator>(cte_scan_leader, this, pipeline);
+      } else {
+        translator = std::make_unique<CteScanLeaderTranslator>(cte_scan_leader, this, pipeline);
+      }
+      break;
+    }
+    case planner::PlanNodeType::CTESCAN: {
+      const auto &cte_scan = dynamic_cast<const planner::CteScanPlanNode &>(plan);
+      translator = std::make_unique<CteScanTranslator>(cte_scan, this, pipeline);
+      break;
+    }
     case planner::PlanNodeType::CREATE_INDEX: {
       const auto &create_index = dynamic_cast<const planner::CreateIndexPlanNode &>(plan);
       translator = std::make_unique<IndexCreateTranslator>(create_index, this, pipeline);
+      break;
+    }
+    case planner::PlanNodeType::UNION: {
+      const auto &union_node = dynamic_cast<const planner::UnionPlanNode &>(plan);
+      translator = std::make_unique<UnionTranslator>(union_node, this, pipeline);
       break;
     }
     default: {
@@ -314,6 +350,11 @@ void CompilationContext::Prepare(const parser::AbstractExpression &expression) {
     case parser::ExpressionType::COLUMN_VALUE: {
       const auto &column_value = dynamic_cast<const parser::ColumnValueExpression &>(expression);
       translator = std::make_unique<ColumnValueTranslator>(column_value, this);
+      break;
+    }
+    case parser::ExpressionType::LATERAL_VALUE: {
+      const auto &lateral_value = dynamic_cast<const parser::LateralValueExpression &>(expression);
+      translator = std::make_unique<LateralValueTranslator>(lateral_value, this);
       break;
     }
     case parser::ExpressionType::COMPARE_EQUAL:
@@ -405,7 +446,8 @@ ExpressionTranslator *CompilationContext::LookupTranslator(const parser::Abstrac
   return nullptr;
 }
 
-std::string CompilationContext::GetFunctionPrefix() const { return "Query" + std::to_string(unique_id_); }
+std::string CompilationContext::GetFunctionPrefix() const { return output_callback_ == nullptr ? "Query" + std::to_string(unique_id_) :
+                                                            output_callback_->GetName().GetString() + "Query" + std::to_string(unique_id_); }
 
 util::RegionVector<ast::FieldDecl *> CompilationContext::QueryParams() const {
   ast::Expr *state_type = codegen_.PointerType(codegen_.MakeExpr(query_state_type_));

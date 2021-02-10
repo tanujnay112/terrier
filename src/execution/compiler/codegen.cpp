@@ -186,6 +186,12 @@ ast::Expr *CodeGen::Float32Type() const { return BuiltinType(ast::BuiltinType::F
 
 ast::Expr *CodeGen::Float64Type() const { return BuiltinType(ast::BuiltinType::Float64); }
 
+ast::Expr *CodeGen::LambdaType(ast::Expr *fn_type) {
+  auto type_repr = context_->GetNodeFactory()->NewLambdaType(position_, fn_type);
+//  type_repr->SetType(ast::LambdaType::Get(fn_type->GetType()->As<ast::FunctionType>()));
+  return type_repr;
+}
+
 ast::Expr *CodeGen::PointerType(ast::Expr *base_type_repr) const {
   // Create the type representation
   auto *type_repr = context_->GetNodeFactory()->NewPointerType(position_, base_type_repr);
@@ -323,6 +329,12 @@ ast::Expr *CodeGen::UnaryOp(parsing::Token::Type op, ast::Expr *input) const {
 
 ast::Expr *CodeGen::AccessStructMember(ast::Expr *object, ast::Identifier member) {
   return context_->GetNodeFactory()->NewMemberExpr(position_, object, MakeExpr(member));
+}
+
+ast::Stmt *CodeGen::Break() {
+  ast::Stmt *break_stmt = context_->GetNodeFactory()->NewBreakStmt(position_);
+  NewLine();
+  return break_stmt;
 }
 
 ast::Stmt *CodeGen::Return() { return Return(nullptr); }
@@ -466,7 +478,12 @@ ast::Expr *CodeGen::IndexIteratorScan(ast::Identifier iter, planner::IndexScanTy
   std::vector<ast::Expr *> args{iter_ptr};
 
   if (asc_scan) args.push_back(Const64(static_cast<int64_t>(asc_type)));
-  if (use_limit) args.push_back(Const32(limit));
+  if (use_limit) {
+    if(asc_type == storage::index::ScanType::OpenHigh){
+      limit = 0;
+    }
+    args.push_back(Const32(limit));
+  }
 
   return CallBuiltin(builtin, args);
 }
@@ -499,6 +516,7 @@ ast::Expr *CodeGen::PRGet(ast::Expr *pr, type::TypeId type, bool nullable, uint3
     case type::TypeId::TIMESTAMP:
       builtin = nullable ? ast::Builtin::PRGetTimestampNull : ast::Builtin::PRGetTimestamp;
       break;
+    case type::TypeId::VARBINARY:
     case type::TypeId::VARCHAR:
       builtin = nullable ? ast::Builtin::PRGetVarlenNull : ast::Builtin::PRGetVarlen;
       break;
@@ -564,6 +582,15 @@ ast::Expr *CodeGen::TableIterInit(ast::Expr *table_iter, ast::Expr *exec_ctx, ca
                                 {table_iter, exec_ctx, Const32(table_oid.UnderlyingValue()), MakeExpr(col_oids)});
   call->SetType(ast::BuiltinType::Get(context_, ast::BuiltinType::Nil));
   return call;
+}
+
+ast::Expr *CodeGen::TempTableIterInit(ast::Identifier tvi, ast::Expr *cte_scan_iterator_ptr, ast::Identifier col_oids,
+                                      ast::Expr *exec_ctx_expr) {
+  ast::Expr *tvi_ptr = MakeExpr(tvi);
+  ast::Expr *col_oids_expr = MakeExpr(col_oids);
+
+  std::vector<ast::Expr *> args{tvi_ptr, exec_ctx_expr, col_oids_expr, cte_scan_iterator_ptr};
+  return CallBuiltin(ast::Builtin::TempTableIterInitBind, args);
 }
 
 ast::Expr *CodeGen::TableIterAdvance(ast::Expr *table_iter) {
@@ -1216,9 +1243,9 @@ ast::Expr *CodeGen::CSVReaderClose(ast::Expr *reader) {
   return call;
 }
 
-ast::Expr *CodeGen::StorageInterfaceInit(ast::Identifier si, ast::Expr *exec_ctx, uint32_t table_oid,
+ast::Expr *CodeGen::StorageInterfaceInit(ast::Expr *si, ast::Expr *exec_ctx, uint32_t table_oid,
                                          ast::Identifier col_oids, bool need_indexes) {
-  ast::Expr *si_ptr = AddressOf(si);
+  ast::Expr *si_ptr = si;
   ast::Expr *table_oid_expr = Const64(static_cast<int64_t>(table_oid));
   ast::Expr *col_oids_expr = MakeExpr(col_oids);
   ast::Expr *need_indexes_expr = ConstBool(need_indexes);
@@ -1259,6 +1286,25 @@ util::RegionVector<ast::FieldDecl *> CodeGen::MakeFieldList(std::initializer_lis
 
 ast::FieldDecl *CodeGen::MakeField(ast::Identifier name, ast::Expr *type) const {
   return context_->GetNodeFactory()->NewFieldDecl(position_, name, type);
+}
+
+ast::Expr *CodeGen::CteScanIteratorInit(ast::Expr *csi, catalog::table_oid_t table, ast::Identifier col_ids,
+                                        ast::Identifier col_types, ast::Expr *exec_ctx_var) {
+  ast::Expr *col_oids_expr = MakeExpr(col_ids);
+  ast::Expr *col_types_expr = MakeExpr(col_types);
+
+  std::vector<ast::Expr *> args{csi, exec_ctx_var, Const32(table.UnderlyingValue()), col_oids_expr, col_types_expr};
+  return CallBuiltin(ast::Builtin::CteScanInit, args);
+}
+
+ast::Expr *CodeGen::IndCteScanIteratorInit(ast::Expr *csi, catalog::table_oid_t table_oid, ast::Identifier col_ids,
+                                           ast::Identifier col_types, bool is_recursive, ast::Expr *exec_ctx_var) {
+  ast::Expr *col_ids_expr = MakeExpr(col_ids);
+  ast::Expr *col_types_expr = MakeExpr(col_types);
+
+  std::vector<ast::Expr *> args{csi,          exec_ctx_var,   Const32(table_oid.UnderlyingValue()),
+                                col_ids_expr, col_types_expr, ConstBool(is_recursive)};
+  return CallBuiltin(ast::Builtin::IndCteScanInit, args);
 }
 
 ast::AstNodeFactory *CodeGen::GetFactory() { return context_->GetNodeFactory(); }
